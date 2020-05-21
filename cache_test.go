@@ -1,14 +1,18 @@
 package dns
 
 import (
-	"context"
+	"net"
+	"os"
 	"testing"
 )
 
+func TestMain(m *testing.M) {
+	net.DefaultResolver = NewCachingResolver(nil)
+	os.Exit(m.Run())
+}
+
 func TestCachingResolver(t *testing.T) {
-	resolver := NewCachingResolver(nil)
-	ips, err := resolver.LookupIPAddr(context.TODO(), "one.one.one.one")
-	if err != nil {
+	if ips, err := net.LookupIP("one.one.one.one"); err != nil {
 		t.Error(err)
 	} else {
 		t.Log(ips)
