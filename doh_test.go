@@ -1,12 +1,14 @@
-package dns
+package dns_test
 
 import (
 	"context"
 	"fmt"
+
+	"github.com/ncruces/go-dns"
 )
 
 func ExampleNewHTTPSResolver() {
-	resolver := NewHTTPSResolver(
+	resolver := dns.NewHTTPSResolver(
 		"1.1.1.1", "2606:4700:4700::1111",
 		"1.0.0.1", "2606:4700:4700::1001")
 

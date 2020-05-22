@@ -1,12 +1,14 @@
-package dns
+package dns_test
 
 import (
 	"context"
 	"fmt"
+
+	"github.com/ncruces/go-dns"
 )
 
 func ExampleNewCachingResolver() {
-	resolver := NewCachingResolver(nil)
+	resolver := dns.NewCachingResolver(nil)
 
 	ips, _ := resolver.LookupIPAddr(context.TODO(), "one.one.one.one")
 	for _, ip := range ips {
