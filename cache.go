@@ -287,10 +287,7 @@ func (c *cachingConn) Read(b []byte) (n int, err error) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
-
-	// set deadline
-	err = c.setDeadline(conn)
+	err = c.setChild(conn)
 	if err != nil {
 		return
 	}
@@ -347,7 +344,6 @@ func (c *cachingConn) Close() error {
 	c.Lock()
 	cancel := c.cancel
 	closer := c.closer
-	c.cancel = nil
 	c.closer = nil
 	c.Unlock()
 
@@ -438,9 +434,9 @@ func (c *cachingConn) dialContext() (ctx context.Context) {
 	return
 }
 
-func (c *cachingConn) setDeadline(conn net.Conn) error {
+func (c *cachingConn) setChild(child net.Conn) error {
 	c.Lock()
 	defer c.Unlock()
-	c.closer = conn
-	return conn.SetDeadline(c.deadline)
+	c.closer = child
+	return child.SetDeadline(c.deadline)
 }
