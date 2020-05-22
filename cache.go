@@ -9,9 +9,10 @@ import (
 	"time"
 )
 
+// NewCachingResolver creates a caching net.Resolver that uses parent to resolve names.
 func NewCachingResolver(parent *net.Resolver, options ...CacheOption) *net.Resolver {
 	if parent == nil {
-		parent = net.DefaultResolver
+		parent = &net.Resolver{}
 	}
 
 	return &net.Resolver{
@@ -21,6 +22,7 @@ func NewCachingResolver(parent *net.Resolver, options ...CacheOption) *net.Resol
 	}
 }
 
+// NewCachingDialer adds caching to a net.Resolver.Dial function.
 func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
 	var cache = cache{dial: parent}
 	for _, o := range options {
@@ -38,6 +40,7 @@ func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
 	}
 }
 
+// A CacheOption customizes the resolver cache.
 type CacheOption interface {
 	apply(*cache)
 }
@@ -50,10 +53,16 @@ func (o maxEntriesOption) apply(c *cache) { c.maxEntries = int(o) }
 func (o maxTTLOption) apply(c *cache)     { c.maxTTL = time.Duration(o) }
 func (o minTTLOption) apply(c *cache)     { c.minTTL = time.Duration(o) }
 
-func MaxCacheEntries(n int) CacheOption       { return maxEntriesOption(n) }
+// MaxCacheEntries sets the maximum number of entries to cache.
+func MaxCacheEntries(n int) CacheOption { return maxEntriesOption(n) }
+
+// MaxCacheTTL sets the maximum time-to-live for entries in the cache.
 func MaxCacheTTL(d time.Duration) CacheOption { return maxTTLOption(d) }
+
+// MinCacheTTL sets the minimum time-to-live for entries in the cache.
 func MinCacheTTL(d time.Duration) CacheOption { return minTTLOption(d) }
 
+// DialFunc is a net.Resolver.Dial function.
 type DialFunc func(ctx context.Context, network, address string) (net.Conn, error)
 
 type cache struct {
