@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func NewCachingResolver(parent *net.Resolver) *net.Resolver {
+func NewCachingResolver(parent *net.Resolver, options ...CacheOption) *net.Resolver {
 	if parent == nil {
 		parent = net.DefaultResolver
 	}
@@ -17,12 +17,18 @@ func NewCachingResolver(parent *net.Resolver) *net.Resolver {
 	return &net.Resolver{
 		PreferGo:     true,
 		StrictErrors: parent.StrictErrors,
-		Dial:         NewCachingDialer(parent.Dial),
+		Dial:         NewCachingDialer(parent.Dial, options...),
 	}
 }
 
-func NewCachingDialer(parent dialFunc) dialFunc {
+func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
 	var cache = cache{dial: parent}
+	for _, o := range options {
+		o.apply(&cache)
+	}
+	if cache.maxEntries <= 0 {
+		cache.maxEntries = 150
+	}
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		return &cachingConn{
 			cache:   &cache,
@@ -32,12 +38,33 @@ func NewCachingDialer(parent dialFunc) dialFunc {
 	}
 }
 
-type dialFunc func(ctx context.Context, network, address string) (net.Conn, error)
+type CacheOption interface {
+	apply(*cache)
+}
+
+type maxEntriesOption int
+type maxTTLOption time.Duration
+type minTTLOption time.Duration
+
+func (o maxEntriesOption) apply(c *cache) { c.maxEntries = int(o) }
+func (o maxTTLOption) apply(c *cache)     { c.maxTTL = time.Duration(o) }
+func (o minTTLOption) apply(c *cache)     { c.minTTL = time.Duration(o) }
+
+func MaxCacheEntries(n int) CacheOption       { return maxEntriesOption(n) }
+func MaxCacheTTL(d time.Duration) CacheOption { return maxTTLOption(d) }
+func MinCacheTTL(d time.Duration) CacheOption { return minTTLOption(d) }
+
+type DialFunc func(ctx context.Context, network, address string) (net.Conn, error)
 
 type cache struct {
 	sync.RWMutex
-	dial    dialFunc
+
+	dial    DialFunc
 	entries map[string]cacheEntry
+
+	maxEntries int
+	maxTTL     time.Duration
+	minTTL     time.Duration
 }
 
 type cacheEntry struct {
@@ -63,6 +90,14 @@ func (c *cache) put(req string, res string) {
 		return
 	}
 
+	// adjust TTL
+	if ttl < c.minTTL {
+		ttl = c.minTTL
+	}
+	if ttl > c.maxTTL && c.maxTTL != 0 {
+		ttl = c.maxTTL
+	}
+
 	c.Lock()
 	defer c.Unlock()
 	if c.entries == nil {
@@ -82,7 +117,7 @@ func (c *cache) put(req string, res string) {
 		if tested < 8 {
 			continue
 		}
-		if evicted == 0 && len(c.entries) >= 1000 {
+		if evicted == 0 && len(c.entries) >= c.maxEntries {
 			// delete at least one entry
 			delete(c.entries, k)
 		}
