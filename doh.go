@@ -96,6 +96,12 @@ func (c *httpConn) Read(b []byte) (n int, err error) {
 	if err == io.EOF {
 		return n, nil
 	}
+	if err == nil {
+		var bb [1]byte
+		if i, _ := res.Body.Read(bb[:]); i > 0 {
+			return n, io.ErrShortBuffer
+		}
+	}
 	return n, err
 }
 
