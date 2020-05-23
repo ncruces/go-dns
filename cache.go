@@ -143,17 +143,17 @@ func (c *cache) put(req string, res string) {
 func (c *cache) get(req string) (res string) {
 	// ignore invalid messages
 	if len(req) < 12 {
-		return
+		return ""
 	}
 	if req[2] >= 0x7f {
-		return
+		return ""
 	}
 
 	c.RLock()
 	defer c.RUnlock()
 
 	if c.entries == nil {
-		return
+		return ""
 	}
 
 	// remove message ID
@@ -162,7 +162,7 @@ func (c *cache) get(req string) (res string) {
 		// prepend correct ID
 		return req[:2] + entry.value
 	}
-	return
+	return ""
 }
 
 func getTTL(msg string) time.Duration {
@@ -261,8 +261,7 @@ func (c *cachingConn) Read(b []byte) (n int, err error) {
 	// deque message
 	req := c.dequeue()
 	if req == "" {
-		err = io.EOF
-		return
+		return 0, io.EOF
 	}
 
 	// check cache
@@ -272,7 +271,7 @@ func (c *cachingConn) Read(b []byte) (n int, err error) {
 		} else {
 			n = copy(b, res)
 		}
-		return
+		return n, err
 	}
 
 	// dial connection
@@ -285,11 +284,11 @@ func (c *cachingConn) Read(b []byte) (n int, err error) {
 		conn, err = d.DialContext(dialCtx, c.network, c.address)
 	}
 	if err != nil {
-		return
+		return 0, err
 	}
 	err = c.setChild(conn)
 	if err != nil {
-		return
+		return 0, err
 	}
 
 	// prepare request
@@ -306,11 +305,10 @@ func (c *cachingConn) Read(b []byte) (n int, err error) {
 	// send request
 	nn, err := conn.Write(mm)
 	if err != nil {
-		return
+		return 0, err
 	}
 	if nn != len(mm) {
-		err = io.ErrShortWrite
-		return
+		return 0, io.ErrShortWrite
 	}
 
 	// read response
@@ -320,23 +318,22 @@ func (c *cachingConn) Read(b []byte) (n int, err error) {
 		var sz [2]byte
 		_, err = io.ReadFull(conn, sz[:])
 		if err != nil {
-			return
+			return 0, err
 		}
 
 		size := int(sz[0])<<8 | int(sz[1])
 		if len(b) < size {
-			err = io.ErrShortBuffer
-			return
+			return 0, io.ErrShortBuffer
 		}
 		n, err = io.ReadFull(conn, b[:size])
 	}
-	if err != nil {
-		return
-	}
 
 	// cache response
-	c.cache.put(req, string(b[:n]))
-	return
+	if err == nil {
+		c.cache.put(req, string(b[:n]))
+	}
+
+	return n, err
 }
 
 // Close implements net.Conn, net.PacketConn.
@@ -424,14 +421,14 @@ func (c *cachingConn) dequeue() (msg string) {
 		msg = c.queue[0]
 		c.queue = c.queue[1:]
 	}
-	return
+	return msg
 }
 
 func (c *cachingConn) dialContext() (ctx context.Context) {
 	c.Lock()
 	defer c.Unlock()
 	ctx, c.cancel = context.WithDeadline(context.Background(), c.deadline)
-	return
+	return ctx
 }
 
 func (c *cachingConn) setChild(child net.Conn) error {

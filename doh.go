@@ -25,7 +25,7 @@ func NewHTTPSResolver(addrs ...string) *net.Resolver {
 	var server uint32
 	return &net.Resolver{
 		PreferGo: true,
-		Dial: func(ctx context.Context, network, address string) (conn net.Conn, err error) {
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 			s := atomic.LoadUint32(&server)
 			return &httpConn{
 				server:    addrs[s],
@@ -58,8 +58,7 @@ func (c *httpConn) Read(b []byte) (n int, err error) {
 	// deque message
 	msg := c.dequeue()
 	if msg == "" {
-		err = io.EOF
-		return
+		return 0, io.EOF
 	}
 
 	url := url.URL{
@@ -72,7 +71,7 @@ func (c *httpConn) Read(b []byte) (n int, err error) {
 	req, err := http.NewRequestWithContext(c.context(),
 		http.MethodPost, url.String(), strings.NewReader(msg))
 	if err != nil {
-		return
+		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/dns-message")
 
@@ -80,13 +79,12 @@ func (c *httpConn) Read(b []byte) (n int, err error) {
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		c.badServer()
-		return
+		return 0, err
 	}
 
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		err = errors.New(http.StatusText(res.StatusCode))
-		return
+		return 0, errors.New(http.StatusText(res.StatusCode))
 	}
 
 	// read response
@@ -96,9 +94,9 @@ func (c *httpConn) Read(b []byte) (n int, err error) {
 		n += i
 	}
 	if err == io.EOF {
-		err = nil
+		return n, nil
 	}
-	return
+	return n, err
 }
 
 // Close implements net.Conn, net.PacketConn.
@@ -171,12 +169,12 @@ func (c *httpConn) dequeue() (msg string) {
 		msg = c.queue[0]
 		c.queue = c.queue[1:]
 	}
-	return
+	return msg
 }
 
 func (c *httpConn) context() (ctx context.Context) {
 	c.Lock()
 	defer c.Unlock()
 	ctx, c.cancel = context.WithDeadline(context.Background(), c.deadline)
-	return
+	return ctx
 }
