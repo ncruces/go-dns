@@ -3,6 +3,7 @@ package dns
 import (
 	"context"
 	"io"
+	"log"
 	"math"
 	"net"
 	"sync"
@@ -83,13 +84,19 @@ type cacheEntry struct {
 
 func (c *cache) put(req string, res string) {
 	// ignore invalid/unmatched messages
-	if len(req) < 12 || len(res) < 12 {
+	if len(req) < 12 || len(res) < 12 { // header size
 		return
 	}
-	if req[2] >= 0x7f || res[2] < 0x7f {
+	if req[0] != res[0] || req[1] != res[1] { // IDs match
 		return
 	}
-	if req[0] != res[0] || req[1] != res[1] {
+	if req[2] >= 0x7f || res[2] < 0x7f { // one query, one response
+		return
+	}
+	if req[2]&0x7a != 0 || res[2]&0x7a != 0 { // standard query, not truncated
+		return
+	}
+	if res[3]&0x7f != 0 && res[3]&0x7f != 3 { // no error, or name error
 		return
 	}
 
@@ -160,6 +167,7 @@ func (c *cache) get(req string) (res string) {
 	entry, ok := c.entries[req[2:]]
 	if ok && time.Until(entry.deadline) > 0 {
 		// prepend correct ID
+		log.Println("Cache hit")
 		return req[:2] + entry.value
 	}
 	return ""
