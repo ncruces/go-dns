@@ -3,7 +3,6 @@ package dns
 import (
 	"context"
 	"io"
-	"log"
 	"math"
 	"net"
 	"sync"
@@ -167,7 +166,6 @@ func (c *cache) get(req string) (res string) {
 	entry, ok := c.entries[req[2:]]
 	if ok && time.Until(entry.deadline) > 0 {
 		// prepend correct ID
-		log.Println("Cache hit")
 		return req[:2] + entry.value
 	}
 	return ""
