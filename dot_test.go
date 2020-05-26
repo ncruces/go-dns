@@ -9,8 +9,8 @@ import (
 	"github.com/ncruces/go-dns"
 )
 
-func ExampleNewTLSResolver() {
-	resolver, err := dns.NewTLSResolver("dns.google")
+func ExampleNewDoTResolver() {
+	resolver, err := dns.NewDoTResolver("dns.google")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -27,27 +27,27 @@ func ExampleNewTLSResolver() {
 	// 2001:4860:4860::8844
 }
 
-func TestNewTLSResolver(t *testing.T) {
+func TestNewDoTResolver(t *testing.T) {
 	// DNS-over-TLS Public Resolvers
 	tests := map[string]struct {
 		server string
-		opts   []dns.TLSOption
+		opts   []dns.DoTOption
 	}{
 		"Google": {server: "dns.google"},
 		"Quad9":  {server: "dns.quad9.net"},
 		"Cloudflare": {
 			server: "cloudflare-dns.com",
-			opts: []dns.TLSOption{
-				dns.TLSAddresses("1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001"),
+			opts: []dns.DoTOption{
+				dns.DoTAddresses("1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001"),
 			},
 		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			r, err := dns.NewTLSResolver(tc.server, tc.opts...)
+			r, err := dns.NewDoTResolver(tc.server, tc.opts...)
 			if err != nil {
-				t.Fatalf("NewTLSResolver(...) error = %v", err)
+				t.Fatalf("NewDoTResolver(...) error = %v", err)
 				return
 			}
 
@@ -69,9 +69,9 @@ func TestNewTLSResolver(t *testing.T) {
 	}
 
 	t.Run("Cache", func(t *testing.T) {
-		r, err := dns.NewTLSResolver("1.1.1.1", dns.TLSCache())
+		r, err := dns.NewDoTResolver("1.1.1.1", dns.DoTCache())
 		if err != nil {
-			t.Fatalf("NewTLSResolver(...) error = %v", err)
+			t.Fatalf("NewDoTResolver(...) error = %v", err)
 			return
 		}
 

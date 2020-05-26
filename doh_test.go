@@ -9,8 +9,8 @@ import (
 	"github.com/ncruces/go-dns"
 )
 
-func ExampleNewHTTPSResolver() {
-	resolver, err := dns.NewHTTPSResolver("https://dns.google/dns-query{?dns}")
+func ExampleNewDoHResolver() {
+	resolver, err := dns.NewDoHResolver("https://dns.google/dns-query{?dns}")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -27,11 +27,11 @@ func ExampleNewHTTPSResolver() {
 	// 2001:4860:4860::8844
 }
 
-func TestNewHTTPSResolver(t *testing.T) {
+func TestNewDoHResolver(t *testing.T) {
 	// DNS-over-HTTPS Public Resolvers
 	tests := map[string]struct {
 		uri  string
-		opts []dns.HTTPSOption
+		opts []dns.DoHOption
 	}{
 		"Google":     {uri: "https://dns.google/dns-query"},
 		"Quad9":      {uri: "https://dns.quad9.net/dns-query"},
@@ -40,9 +40,9 @@ func TestNewHTTPSResolver(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			r, err := dns.NewHTTPSResolver(tc.uri, tc.opts...)
+			r, err := dns.NewDoHResolver(tc.uri, tc.opts...)
 			if err != nil {
-				t.Fatalf("NewHTTPSResolver(...) error = %v", err)
+				t.Fatalf("NewDoHResolver(...) error = %v", err)
 				return
 			}
 
@@ -64,9 +64,9 @@ func TestNewHTTPSResolver(t *testing.T) {
 	}
 
 	t.Run("Cache", func(t *testing.T) {
-		r, err := dns.NewHTTPSResolver("https://1.1.1.1/dns-query", dns.HTTPSCache())
+		r, err := dns.NewDoHResolver("https://1.1.1.1/dns-query", dns.DoHCache())
 		if err != nil {
-			t.Fatalf("NewTLSResolver(...) error = %v", err)
+			t.Fatalf("NewDoHResolver(...) error = %v", err)
 			return
 		}
 

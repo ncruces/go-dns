@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 )
 
-// NewTLSResolver creates a DNS over TLS resolver.
+// NewDoTResolver creates a DNS over TLS resolver.
 // The server can be an IP address, a host name, or a network address of the form "host:port".
-func NewTLSResolver(server string, options ...TLSOption) (*net.Resolver, error) {
+func NewDoTResolver(server string, options ...DoTOption) (*net.Resolver, error) {
 	// look for a custom port
 	host, port, err := net.SplitHostPort(server)
 	if err != nil {
@@ -19,7 +19,7 @@ func NewTLSResolver(server string, options ...TLSOption) (*net.Resolver, error) 
 	}
 
 	// apply options
-	var opts tlsOpts
+	var opts dotOpts
 	for _, o := range options {
 		o.apply(&opts)
 	}
@@ -80,12 +80,12 @@ func NewTLSResolver(server string, options ...TLSOption) (*net.Resolver, error) 
 	return &resolver, nil
 }
 
-// A TLSOption customizes the TLS resolver.
-type TLSOption interface {
-	apply(*tlsOpts)
+// A DoTOption customizes the DNS over TLS resolver.
+type DoTOption interface {
+	apply(*dotOpts)
 }
 
-type tlsOpts struct {
+type dotOpts struct {
 	config    *tls.Config
 	addrs     []string
 	cache     bool
@@ -93,21 +93,21 @@ type tlsOpts struct {
 }
 
 type (
-	tlsConfig    tls.Config
-	tlsAddresses []string
-	tlsCache     []CacheOption
+	dotConfig    tls.Config
+	dotAddresses []string
+	dotCache     []CacheOption
 )
 
-func (o *tlsConfig) apply(t *tlsOpts)   { t.config = (*tls.Config)(o) }
-func (o tlsAddresses) apply(t *tlsOpts) { t.addrs = ([]string)(o) }
-func (o tlsCache) apply(t *tlsOpts)     { t.cache = true; t.cacheOpts = ([]CacheOption)(o) }
+func (o *dotConfig) apply(t *dotOpts)   { t.config = (*tls.Config)(o) }
+func (o dotAddresses) apply(t *dotOpts) { t.addrs = ([]string)(o) }
+func (o dotCache) apply(t *dotOpts)     { t.cache = true; t.cacheOpts = ([]CacheOption)(o) }
 
-// TLSConfig sets the tls.Config used by the resolver.
-func TLSConfig(config *tls.Config) TLSOption { return (*tlsConfig)(config) }
+// DoTConfig sets the tls.Config used by the resolver.
+func DoTConfig(config *tls.Config) DoTOption { return (*dotConfig)(config) }
 
-// TLSAddresses sets the network addresses of the resolver.
+// DoTAddresses sets the network addresses of the resolver.
 // These should be IP addresses, or network addresses of the form "IP:port".
-func TLSAddresses(addresses ...string) TLSOption { return tlsAddresses(addresses) }
+func DoTAddresses(addresses ...string) DoTOption { return dotAddresses(addresses) }
 
-// TLSCache adds caching to the resolver, with the given options.
-func TLSCache(options ...CacheOption) TLSOption { return tlsCache(options) }
+// DoTCache adds caching to the resolver, with the given options.
+func DoTCache(options ...CacheOption) DoTOption { return dotCache(options) }

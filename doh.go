@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// NewHTTPSResolver creates a DNS over HTTPS resolver.
-func NewHTTPSResolver(uri string, options ...HTTPSOption) (*net.Resolver, error) {
+// NewDoHResolver creates a DNS over HTTPS resolver.
+func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 	// parse the uri template into a url
 	uri, err := parseURITemplate(uri)
 	if err != nil {
@@ -30,7 +30,7 @@ func NewHTTPSResolver(uri string, options ...HTTPSOption) (*net.Resolver, error)
 	}
 
 	// apply options
-	var opts httpsOpts
+	var opts dohOpts
 	for _, o := range options {
 		o.apply(&opts)
 	}
@@ -53,7 +53,7 @@ func NewHTTPSResolver(uri string, options ...HTTPSOption) (*net.Resolver, error)
 		}
 	}
 
-	// setup the HTTPS transport
+	// setup the http transport
 	if opts.transport == nil {
 		opts.transport = &http.Transport{
 			MaxIdleConns:        http.DefaultMaxIdleConnsPerHost,
@@ -65,7 +65,7 @@ func NewHTTPSResolver(uri string, options ...HTTPSOption) (*net.Resolver, error)
 		opts.transport = opts.transport.Clone()
 	}
 
-	// setup the HTTPS client
+	// setup the http client
 	client := http.Client{
 		Transport: opts.transport,
 	}
@@ -75,7 +75,7 @@ func NewHTTPSResolver(uri string, options ...HTTPSOption) (*net.Resolver, error)
 		PreferGo:     true,
 		StrictErrors: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return &httpConn{uri: uri, client: &client}, nil
+			return &dohConn{uri: uri, client: &client}, nil
 		},
 	}
 
@@ -100,12 +100,12 @@ func NewHTTPSResolver(uri string, options ...HTTPSOption) (*net.Resolver, error)
 	return &resolver, nil
 }
 
-// An HTTPSOption customizes the HTTPS resolver.
-type HTTPSOption interface {
-	apply(*httpsOpts)
+// An DoHOption customizes the DNS over HTTPS resolver.
+type DoHOption interface {
+	apply(*dohOpts)
 }
 
-type httpsOpts struct {
+type dohOpts struct {
 	transport *http.Transport
 	addrs     []string
 	cache     bool
@@ -113,26 +113,26 @@ type httpsOpts struct {
 }
 
 type (
-	httpsTransport http.Transport
-	httpsAddresses []string
-	httpsCache     []CacheOption
+	dohTransport http.Transport
+	dohAddresses []string
+	dohCache     []CacheOption
 )
 
-func (o *httpsTransport) apply(t *httpsOpts) { t.transport = (*http.Transport)(o) }
-func (o httpsAddresses) apply(t *httpsOpts)  { t.addrs = ([]string)(o) }
-func (o httpsCache) apply(t *httpsOpts)      { t.cache = true; t.cacheOpts = ([]CacheOption)(o) }
+func (o *dohTransport) apply(t *dohOpts) { t.transport = (*http.Transport)(o) }
+func (o dohAddresses) apply(t *dohOpts)  { t.addrs = ([]string)(o) }
+func (o dohCache) apply(t *dohOpts)      { t.cache = true; t.cacheOpts = ([]CacheOption)(o) }
 
-// HTTPSTransport sets the http.Client used by the resolver.
-func HTTPSTransport(transport *http.Transport) HTTPSOption { return (*httpsTransport)(transport) }
+// DoHTransport sets the http.Transport used by the resolver.
+func DoHTransport(transport *http.Transport) DoHOption { return (*dohTransport)(transport) }
 
-// HTTPSAddresses sets the network addresses of the resolver.
+// DoHAddresses sets the network addresses of the resolver.
 // These should be IP addresses, or network addresses of the form "IP:port".
-func HTTPSAddresses(addresses ...string) HTTPSOption { return httpsAddresses(addresses) }
+func DoHAddresses(addresses ...string) DoHOption { return dohAddresses(addresses) }
 
-// HTTPSCache adds caching to the resolver, with the given options.
-func HTTPSCache(options ...CacheOption) HTTPSOption { return httpsCache(options) }
+// DoHCache adds caching to the resolver, with the given options.
+func DoHCache(options ...CacheOption) DoHOption { return dohCache(options) }
 
-type httpConn struct {
+type dohConn struct {
 	sync.Mutex
 
 	uri    string
@@ -145,13 +145,13 @@ type httpConn struct {
 }
 
 // Write implements net.Conn.
-func (c *httpConn) Write(b []byte) (n int, err error) {
+func (c *dohConn) Write(b []byte) (n int, err error) {
 	c.enqueue(string(b))
 	return len(b), nil
 }
 
 // Read implements net.Conn.
-func (c *httpConn) Read(b []byte) (n int, err error) {
+func (c *dohConn) Read(b []byte) (n int, err error) {
 	// deque message
 	msg := c.dequeue()
 	if msg == "" {
@@ -196,7 +196,7 @@ func (c *httpConn) Read(b []byte) (n int, err error) {
 }
 
 // Close implements net.Conn, net.PacketConn.
-func (c *httpConn) Close() error {
+func (c *dohConn) Close() error {
 	c.Lock()
 	cancel := c.cancel
 	c.Unlock()
@@ -208,24 +208,24 @@ func (c *httpConn) Close() error {
 }
 
 // LocalAddr implements net.Conn, net.PacketConn.
-func (c *httpConn) LocalAddr() net.Addr {
+func (c *dohConn) LocalAddr() net.Addr {
 	return nil
 }
 
 // RemoteAddr implements net.Conn.
-func (c *httpConn) RemoteAddr() net.Addr {
+func (c *dohConn) RemoteAddr() net.Addr {
 	return nil
 }
 
 // SetDeadline implements net.Conn, net.PacketConn.
-func (c *httpConn) SetDeadline(t time.Time) error {
+func (c *dohConn) SetDeadline(t time.Time) error {
 	c.SetReadDeadline(t)
 	c.SetWriteDeadline(t)
 	return nil
 }
 
 // SetReadDeadline implements net.Conn, net.PacketConn.
-func (c *httpConn) SetReadDeadline(t time.Time) error {
+func (c *dohConn) SetReadDeadline(t time.Time) error {
 	c.Lock()
 	defer c.Unlock()
 	c.deadline = t
@@ -233,13 +233,13 @@ func (c *httpConn) SetReadDeadline(t time.Time) error {
 }
 
 // SetWriteDeadline implements net.Conn, net.PacketConn.
-func (c *httpConn) SetWriteDeadline(t time.Time) error {
+func (c *dohConn) SetWriteDeadline(t time.Time) error {
 	// writes do not timeout
 	return nil
 }
 
 // ReadFrom implements net.PacketConn.
-func (c *httpConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+func (c *dohConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	// on a connected PacketConn, ReadFrom does a Read from the RemoteAddr
 	addr = c.RemoteAddr()
 	n, err = c.Read(p)
@@ -247,18 +247,18 @@ func (c *httpConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 }
 
 // WriteTo implements net.PacketConn.
-func (c *httpConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+func (c *dohConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	// on a connected PacketConn, WriteTo errors
 	return 0, net.ErrWriteToConnected
 }
 
-func (c *httpConn) enqueue(b string) {
+func (c *dohConn) enqueue(b string) {
 	c.Lock()
 	defer c.Unlock()
 	c.queue = append(c.queue, b)
 }
 
-func (c *httpConn) dequeue() (msg string) {
+func (c *dohConn) dequeue() (msg string) {
 	c.Lock()
 	defer c.Unlock()
 	if len(c.queue) > 0 {
@@ -268,7 +268,7 @@ func (c *httpConn) dequeue() (msg string) {
 	return msg
 }
 
-func (c *httpConn) context() (ctx context.Context) {
+func (c *dohConn) context() (ctx context.Context) {
 	c.Lock()
 	defer c.Unlock()
 	ctx, c.cancel = context.WithDeadline(context.Background(), c.deadline)
