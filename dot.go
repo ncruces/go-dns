@@ -3,7 +3,6 @@ package dns
 import (
 	"context"
 	"crypto/tls"
-	"log"
 	"net"
 	"sync/atomic"
 )
@@ -29,7 +28,6 @@ func NewTLSResolver(server string, options ...TLSOption) (*net.Resolver, error) 
 	if len(opts.addrs) == 0 {
 		ips, err := net.LookupIP(server)
 		if err != nil {
-			log.Println(server)
 			return nil, err
 		}
 		opts.addrs = make([]string, len(ips))
@@ -50,8 +48,7 @@ func NewTLSResolver(server string, options ...TLSOption) (*net.Resolver, error) 
 			ServerName:         server,
 			ClientSessionCache: tls.NewLRUClientSessionCache(len(opts.addrs)),
 		}
-	}
-	if opts.config.ServerName == "" {
+	} else {
 		opts.config = opts.config.Clone()
 		opts.config.ServerName = server
 	}
@@ -96,17 +93,17 @@ type tlsOpts struct {
 }
 
 type (
-	tlsConfigOption tls.Config
-	tlsAddresses    []string
-	tlsCache        []CacheOption
+	tlsConfig    tls.Config
+	tlsAddresses []string
+	tlsCache     []CacheOption
 )
 
-func (o *tlsConfigOption) apply(t *tlsOpts) { t.config = (*tls.Config)(o) }
-func (o tlsAddresses) apply(t *tlsOpts)     { t.addrs = ([]string)(o) }
-func (o tlsCache) apply(t *tlsOpts)         { t.cache = true; t.cacheOpts = ([]CacheOption)(o) }
+func (o *tlsConfig) apply(t *tlsOpts)   { t.config = (*tls.Config)(o) }
+func (o tlsAddresses) apply(t *tlsOpts) { t.addrs = ([]string)(o) }
+func (o tlsCache) apply(t *tlsOpts)     { t.cache = true; t.cacheOpts = ([]CacheOption)(o) }
 
 // TLSConfig sets the tls.Config used by the resolver.
-func TLSConfig(config *tls.Config) TLSOption { return (*tlsConfigOption)(config) }
+func TLSConfig(config *tls.Config) TLSOption { return (*tlsConfig)(config) }
 
 // TLSAddresses sets the network addresses of the resolver.
 // These should be IP addresses, or network addresses of the form "IP:port".

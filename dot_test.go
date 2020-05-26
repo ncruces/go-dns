@@ -33,11 +33,13 @@ func TestNewTLSResolver(t *testing.T) {
 		server string
 		opts   []dns.TLSOption
 	}{
-		"Quad9":  {server: "9.9.9.9"},
 		"Google": {server: "dns.google"},
+		"Quad9":  {server: "dns.quad9.net"},
 		"Cloudflare": {
 			server: "cloudflare-dns.com",
-			opts:   []dns.TLSOption{dns.TLSAddresses("1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001")},
+			opts: []dns.TLSOption{
+				dns.TLSAddresses("1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001"),
+			},
 		},
 	}
 
@@ -45,18 +47,23 @@ func TestNewTLSResolver(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			r, err := dns.NewTLSResolver(tc.server, tc.opts...)
 			if err != nil {
-				t.Fatalf("NewTLSResolver() error = %v", err)
+				t.Fatalf("NewTLSResolver(...) error = %v", err)
 				return
+			}
+
+			e, err := r.LookupIPAddr(context.TODO(), "nxdomain.test")
+			if err == nil {
+				t.Errorf("LookupIPAddr('nxdomain.test') = %v", e)
 			}
 
 			ips, err := r.LookupIPAddr(context.TODO(), "one.one.one.one")
 			if err != nil {
-				t.Fatalf("LookupIPAddr() error = %v", err)
+				t.Fatalf("LookupIPAddr('one.one.one.one') error = %v", err)
 				return
 			}
 
 			if !checkIPAddrs(ips, "1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001") {
-				t.Errorf("LookupIPAddr() got = %v", ips)
+				t.Errorf("LookupIPAddr('one.one.one.one') = %v", ips)
 			}
 		})
 	}
@@ -64,24 +71,24 @@ func TestNewTLSResolver(t *testing.T) {
 	t.Run("Cache", func(t *testing.T) {
 		r, err := dns.NewTLSResolver("1.1.1.1", dns.TLSCache())
 		if err != nil {
-			t.Fatalf("NewTLSResolver() error = %v", err)
+			t.Fatalf("NewTLSResolver(...) error = %v", err)
 			return
 		}
 
 		a, err := r.LookupIPAddr(context.TODO(), "one.one.one.one")
 		if err != nil {
-			t.Fatalf("LookupIPAddr() error = %v", err)
+			t.Fatalf("LookupIPAddr('one.one.one.one') error = %v", err)
 			return
 		}
 
 		b, err := r.LookupIPAddr(context.TODO(), "one.one.one.one")
 		if err != nil {
-			t.Fatalf("LookupIPAddr() error = %v", err)
+			t.Fatalf("LookupIPAddr('one.one.one.one') error = %v", err)
 			return
 		}
 
 		if !check(a, b) {
-			t.Errorf("LookupIPAddr() want = %v, got = %v", a, b)
+			t.Errorf("LookupIPAddr('one.one.one.one') = %v [wanted %v]", b, a)
 		}
 	})
 }

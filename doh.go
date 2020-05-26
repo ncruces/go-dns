@@ -14,32 +14,129 @@ import (
 )
 
 // NewHTTPSResolver creates a DNS over HTTPS resolver.
-func NewHTTPSResolver(addrs ...string) *net.Resolver {
-	for i, a := range addrs {
-		ip := net.ParseIP(a)
-		if ip != nil && ip.To4() == nil {
-			addrs[i] = "[" + a + "]"
+func NewHTTPSResolver(uri string, options ...HTTPSOption) (*net.Resolver, error) {
+	// parse the uri template into a url
+	uri, err := parseURITemplate(uri)
+	if err != nil {
+		return nil, err
+	}
+	url, err := url.Parse(uri)
+	if err != nil {
+		return nil, err
+	}
+	port := url.Port()
+	if port == "" {
+		port = url.Scheme
+	}
+
+	// apply options
+	var opts httpsOpts
+	for _, o := range options {
+		o.apply(&opts)
+	}
+
+	// resolve server network addresses
+	if len(opts.addrs) == 0 {
+		ips, err := net.LookupIP(url.Hostname())
+		if err != nil {
+			return nil, err
+		}
+		opts.addrs = make([]string, len(ips))
+		for i, ip := range ips {
+			opts.addrs[i] = net.JoinHostPort(ip.String(), port)
+		}
+	} else {
+		for i, a := range opts.addrs {
+			if net.ParseIP(a) != nil {
+				opts.addrs[i] = net.JoinHostPort(a, port)
+			}
 		}
 	}
 
-	var server uint32
-	return &net.Resolver{
-		PreferGo: true,
+	// setup the HTTPS transport
+	if opts.transport == nil {
+		opts.transport = &http.Transport{
+			MaxIdleConns:        http.DefaultMaxIdleConnsPerHost,
+			IdleConnTimeout:     90 * time.Second,
+			TLSHandshakeTimeout: 10 * time.Second,
+			ForceAttemptHTTP2:   true,
+		}
+	} else {
+		opts.transport = opts.transport.Clone()
+	}
+
+	// setup the HTTPS client
+	client := http.Client{
+		Transport: opts.transport,
+	}
+
+	// create the resolver
+	var resolver = net.Resolver{
+		PreferGo:     true,
+		StrictErrors: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			s := atomic.LoadUint32(&server)
-			return &httpConn{
-				server:    addrs[s],
-				badServer: func() { atomic.CompareAndSwapUint32(&server, s, (s+1)%uint32(len(addrs))) },
-			}, nil
+			return &httpConn{uri: uri, client: &client}, nil
 		},
 	}
+
+	// setup dialer
+	var index uint32
+	opts.transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		var d net.Dialer
+		s := atomic.LoadUint32(&index)
+		conn, err := d.DialContext(ctx, network, opts.addrs[s])
+		if err != nil {
+			atomic.CompareAndSwapUint32(&index, s, (s+1)%uint32(len(opts.addrs)))
+			return nil, err
+		}
+		return conn, err
+	}
+
+	// setup caching
+	if opts.cache {
+		resolver.Dial = NewCachingDialer(resolver.Dial, opts.cacheOpts...)
+	}
+
+	return &resolver, nil
 }
+
+// An HTTPSOption customizes the HTTPS resolver.
+type HTTPSOption interface {
+	apply(*httpsOpts)
+}
+
+type httpsOpts struct {
+	transport *http.Transport
+	addrs     []string
+	cache     bool
+	cacheOpts []CacheOption
+}
+
+type (
+	httpsTransport http.Transport
+	httpsAddresses []string
+	httpsCache     []CacheOption
+)
+
+func (o *httpsTransport) apply(t *httpsOpts) { t.transport = (*http.Transport)(o) }
+func (o httpsAddresses) apply(t *httpsOpts)  { t.addrs = ([]string)(o) }
+func (o httpsCache) apply(t *httpsOpts)      { t.cache = true; t.cacheOpts = ([]CacheOption)(o) }
+
+// HTTPSTransport sets the http.Client used by the resolver.
+func HTTPSTransport(transport *http.Transport) HTTPSOption { return (*httpsTransport)(transport) }
+
+// HTTPSAddresses sets the network addresses of the resolver.
+// These should be IP addresses, or network addresses of the form "IP:port".
+func HTTPSAddresses(addresses ...string) HTTPSOption { return httpsAddresses(addresses) }
+
+// HTTPSCache adds caching to the resolver, with the given options.
+func HTTPSCache(options ...CacheOption) HTTPSOption { return httpsCache(options) }
 
 type httpConn struct {
 	sync.Mutex
 
-	server    string
-	badServer func()
+	uri    string
+	client *http.Client
 
 	queue []string
 
@@ -61,24 +158,17 @@ func (c *httpConn) Read(b []byte) (n int, err error) {
 		return 0, io.EOF
 	}
 
-	url := url.URL{
-		Scheme: "https",
-		Host:   c.server,
-		Path:   "/dns-query",
-	}
-
 	// prepare request
 	req, err := http.NewRequestWithContext(c.context(),
-		http.MethodPost, url.String(), strings.NewReader(msg))
+		http.MethodPost, c.uri, strings.NewReader(msg))
 	if err != nil {
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/dns-message")
 
 	// send request
-	res, err := http.DefaultClient.Do(req)
+	res, err := c.client.Do(req)
 	if err != nil {
-		c.badServer()
 		return 0, err
 	}
 
@@ -183,4 +273,54 @@ func (c *httpConn) context() (ctx context.Context) {
 	defer c.Unlock()
 	ctx, c.cancel = context.WithDeadline(context.Background(), c.deadline)
 	return ctx
+}
+
+func parseURITemplate(uri string) (string, error) {
+	var buf strings.Builder
+	var exp bool
+
+	for i := 0; i < len(uri); i++ {
+		switch c := uri[i]; c {
+		case '{':
+			if exp {
+				return "", errors.New("uri: invalid syntax")
+			}
+			exp = true
+		case '}':
+			if !exp {
+				return "", errors.New("uri: invalid syntax")
+			}
+			exp = false
+		default:
+			if !exp {
+				buf.WriteByte(c)
+			}
+		}
+	}
+
+	return buf.String(), nil
+}
+
+func baseTransport() *http.Transport {
+	if tr, ok := http.DefaultTransport.(*http.Transport); ok {
+		tr = tr.Clone()
+		tr.Proxy = nil
+		if tr.MaxIdleConnsPerHost < http.DefaultMaxIdleConnsPerHost {
+			tr.MaxIdleConnsPerHost = http.DefaultMaxIdleConnsPerHost
+		}
+		return tr
+	}
+
+	return &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 }
