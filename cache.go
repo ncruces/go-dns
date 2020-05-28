@@ -28,8 +28,8 @@ func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
 	for _, o := range options {
 		o.apply(&cache)
 	}
-	if cache.maxEntries <= 0 {
-		cache.maxEntries = 150
+	if cache.maxEntries == 0 {
+		cache.maxEntries = DefaultMaxCacheEntries
 	}
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		return &cachingConn{
@@ -39,6 +39,8 @@ func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
 		}, nil
 	}
 }
+
+const DefaultMaxCacheEntries = 150
 
 // A CacheOption customizes the resolver cache.
 type CacheOption interface {
@@ -54,6 +56,7 @@ func (o maxTTLOption) apply(c *cache)     { c.maxTTL = time.Duration(o) }
 func (o minTTLOption) apply(c *cache)     { c.minTTL = time.Duration(o) }
 
 // MaxCacheEntries sets the maximum number of entries to cache.
+// If zero, DefaultMaxCacheEntries is used. Negative means no limit.
 func MaxCacheEntries(n int) CacheOption { return maxEntriesOption(n) }
 
 // MaxCacheTTL sets the maximum time-to-live for entries in the cache.
@@ -109,6 +112,7 @@ func (c *cache) put(req string, res string) {
 	if ttl < c.minTTL {
 		ttl = c.minTTL
 	}
+	// maxTTL overrides minTTL
 	if ttl > c.maxTTL && c.maxTTL != 0 {
 		ttl = c.maxTTL
 	}
@@ -138,7 +142,7 @@ func (c *cache) put(req string, res string) {
 		if tested < 8 {
 			continue
 		}
-		if evicted == 0 && len(c.entries) > c.maxEntries {
+		if evicted == 0 && c.maxEntries > 0 && len(c.entries) > c.maxEntries {
 			// delete at least one entry
 			delete(c.entries, k)
 		}
