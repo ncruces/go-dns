@@ -26,7 +26,7 @@ func NewDoTResolver(server string, options ...DoTOption) (*net.Resolver, error) 
 
 	// resolve server network addresses
 	if len(opts.addrs) == 0 {
-		ips, err := net.LookupIP(server)
+		ips, err := OpportunisticResolver.LookupIPAddr(context.Background(), server)
 		if err != nil {
 			return nil, err
 		}

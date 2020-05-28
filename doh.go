@@ -37,7 +37,7 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 
 	// resolve server network addresses
 	if len(opts.addrs) == 0 {
-		ips, err := net.LookupIP(url.Hostname())
+		ips, err := OpportunisticResolver.LookupIPAddr(context.Background(), url.Hostname())
 		if err != nil {
 			return nil, err
 		}
