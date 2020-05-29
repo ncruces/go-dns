@@ -13,6 +13,7 @@ import (
 )
 
 // NewDoHResolver creates a DNS over HTTPS resolver.
+// The uri may be an URI Template.
 func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 	// parse the uri template into a url
 	uri, err := parseURITemplate(uri)

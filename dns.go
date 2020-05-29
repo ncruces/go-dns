@@ -1,5 +1,5 @@
 // Package dns provides net.Resolver instances implementing caching,
-// as well as DNS over TLS/HTTPS.
+// opportunistic encryption, and DNS over TLS/HTTPS.
 //
 // To replace the net.DefaultResolver with a caching DNS over HTTPS instance
 // using the Google Public DNS resolver:
@@ -20,27 +20,29 @@ import (
 // OpportunisticResolver opportunistically tries encrypted DNS over TLS
 // using the local resolver.
 var OpportunisticResolver = &net.Resolver{
+	Dial:     opportunisticDial,
 	PreferGo: true,
-	Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-		host, port, _ := net.SplitHostPort(address)
-		if (port == "53" || port == "domain") && !hasBadServer(address) {
-			deadline, ok := ctx.Deadline()
-			if ok && deadline.After(time.Now().Add(2*time.Second)) {
-				var d net.Dialer
-				d.Timeout = time.Second
-				tlsAddr := net.JoinHostPort(host, "853")
-				tlsConf := tls.Config{InsecureSkipVerify: true}
-				conn, _ := tls.DialWithDialer(&d, "tcp", tlsAddr, &tlsConf)
-				if conn != nil {
-					return conn, nil
-				}
-				addBadServer(address)
-			}
-		}
+}
 
-		var d net.Dialer
-		return d.DialContext(ctx, network, address)
-	},
+func opportunisticDial(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, _ := net.SplitHostPort(address)
+	if (port == "53" || port == "domain") && !hasBadServer(address) {
+		deadline, ok := ctx.Deadline()
+		if ok && deadline.After(time.Now().Add(2*time.Second)) {
+			var d net.Dialer
+			d.Timeout = time.Second
+			tlsAddr := net.JoinHostPort(host, "853")
+			tlsConf := tls.Config{InsecureSkipVerify: true}
+			conn, _ := tls.DialWithDialer(&d, "tcp", tlsAddr, &tlsConf)
+			if conn != nil {
+				return conn, nil
+			}
+			addBadServer(address)
+		}
+	}
+
+	var d net.Dialer
+	return d.DialContext(ctx, network, address)
 }
 
 var badServers struct {

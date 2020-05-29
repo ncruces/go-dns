@@ -53,7 +53,7 @@ func (o maxTTLOption) apply(c *cache)     { c.maxTTL = time.Duration(o) }
 func (o minTTLOption) apply(c *cache)     { c.minTTL = time.Duration(o) }
 
 // MaxCacheEntries sets the maximum number of entries to cache.
-// If zero, DefaultMaxCacheEntries is used. Negative means no limit.
+// If zero, DefaultMaxCacheEntries is used; negative means no limit.
 func MaxCacheEntries(n int) CacheOption { return maxEntriesOption(n) }
 
 // MaxCacheTTL sets the maximum time-to-live for entries in the cache.
