@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -75,7 +74,9 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 		PreferGo:     true,
 		StrictErrors: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return &dohConn{uri: uri, client: &client}, nil
+			conn := &dnsConn{}
+			conn.exchange = dohExchange(uri, &client)
+			return conn, nil
 		},
 	}
 
@@ -132,151 +133,39 @@ func DoHAddresses(addresses ...string) DoHOption { return dohAddresses(addresses
 // DoHCache adds caching to the resolver, with the given options.
 func DoHCache(options ...CacheOption) DoHOption { return dohCache(options) }
 
-type dohConn struct {
-	sync.Mutex
-
-	uri    string
-	client *http.Client
-
-	queue []string
-
-	cancel   context.CancelFunc
-	deadline time.Time
-}
-
-// Write implements net.Conn.
-func (c *dohConn) Write(b []byte) (n int, err error) {
-	c.enqueue(string(b))
-	return len(b), nil
-}
-
-// Read implements net.Conn.
-func (c *dohConn) Read(b []byte) (n int, err error) {
-	// deque message
-	msg := c.dequeue()
-	if msg == "" {
-		return 0, io.EOF
-	}
-
-	// prepare request
-	req, err := http.NewRequestWithContext(c.context(),
-		http.MethodPost, c.uri, strings.NewReader(msg))
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Content-Type", "application/dns-message")
-
-	// send request
-	res, err := c.client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return 0, errors.New(http.StatusText(res.StatusCode))
-	}
-
-	// read response
-	for n < len(b) && err == nil {
-		var i int
-		i, err = res.Body.Read(b[n:])
-		n += i
-	}
-	if err == io.EOF {
-		return n, nil
-	}
-	if err == nil {
-		var bb [1]byte
-		if i, _ := res.Body.Read(bb[:]); i > 0 {
-			return n, io.ErrShortBuffer
+func dohExchange(uri string, client *http.Client) func(*dnsConn, string) (string, error) {
+	return func(parent *dnsConn, msg string) (string, error) {
+		// prepare request
+		req, err := http.NewRequestWithContext(parent.getContext(),
+			http.MethodPost, uri, strings.NewReader(msg))
+		if err != nil {
+			return "", err
 		}
+		req.Header.Set("Content-Type", "application/dns-message")
+
+		// send request
+		res, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+
+		defer res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			return "", errors.New(http.StatusText(res.StatusCode))
+		}
+
+		// read response
+		var str strings.Builder
+		_, err = io.Copy(&str, res.Body)
+		if err != nil {
+			return "", err
+		}
+		return str.String(), nil
 	}
-	return n, err
-}
-
-// Close implements net.Conn, net.PacketConn.
-func (c *dohConn) Close() error {
-	c.Lock()
-	cancel := c.cancel
-	c.Unlock()
-
-	if cancel != nil {
-		cancel()
-	}
-	return nil
-}
-
-// LocalAddr implements net.Conn, net.PacketConn.
-func (c *dohConn) LocalAddr() net.Addr {
-	return nil
-}
-
-// RemoteAddr implements net.Conn.
-func (c *dohConn) RemoteAddr() net.Addr {
-	return nil
-}
-
-// SetDeadline implements net.Conn, net.PacketConn.
-func (c *dohConn) SetDeadline(t time.Time) error {
-	c.SetReadDeadline(t)
-	c.SetWriteDeadline(t)
-	return nil
-}
-
-// SetReadDeadline implements net.Conn, net.PacketConn.
-func (c *dohConn) SetReadDeadline(t time.Time) error {
-	c.Lock()
-	defer c.Unlock()
-	c.deadline = t
-	return nil
-}
-
-// SetWriteDeadline implements net.Conn, net.PacketConn.
-func (c *dohConn) SetWriteDeadline(t time.Time) error {
-	// writes do not timeout
-	return nil
-}
-
-// ReadFrom implements net.PacketConn.
-func (c *dohConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	// on a connected PacketConn, ReadFrom does a Read from the RemoteAddr
-	addr = c.RemoteAddr()
-	n, err = c.Read(p)
-	return
-}
-
-// WriteTo implements net.PacketConn.
-func (c *dohConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	// on a connected PacketConn, WriteTo errors
-	return 0, net.ErrWriteToConnected
-}
-
-func (c *dohConn) enqueue(b string) {
-	c.Lock()
-	defer c.Unlock()
-	c.queue = append(c.queue, b)
-}
-
-func (c *dohConn) dequeue() (msg string) {
-	c.Lock()
-	defer c.Unlock()
-	if len(c.queue) > 0 {
-		msg = c.queue[0]
-		c.queue = c.queue[1:]
-	}
-	return msg
-}
-
-func (c *dohConn) context() (ctx context.Context) {
-	c.Lock()
-	defer c.Unlock()
-	ctx, c.cancel = context.WithDeadline(context.Background(), c.deadline)
-	return ctx
 }
 
 func parseURITemplate(uri string) (string, error) {
-	var buf strings.Builder
+	var str strings.Builder
 	var exp bool
 
 	for i := 0; i < len(uri); i++ {
@@ -293,12 +182,12 @@ func parseURITemplate(uri string) (string, error) {
 			exp = false
 		default:
 			if !exp {
-				buf.WriteByte(c)
+				str.WriteByte(c)
 			}
 		}
 	}
 
-	return buf.String(), nil
+	return str.String(), nil
 }
 
 func baseTransport() *http.Transport {

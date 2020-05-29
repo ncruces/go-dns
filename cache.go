@@ -2,7 +2,6 @@ package dns
 
 import (
 	"context"
-	"io"
 	"math"
 	"net"
 	"sync"
@@ -32,11 +31,9 @@ func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
 		cache.maxEntries = DefaultMaxCacheEntries
 	}
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		return &cachingConn{
-			cache:   &cache,
-			network: network,
-			address: address,
-		}, nil
+		conn := &dnsConn{}
+		conn.exchange = cachingExchange(&cache, network, address)
+		return conn, nil
 	}
 }
 
@@ -245,205 +242,44 @@ func getUint32(s string) int {
 	return int(s[3]) | int(s[2])<<8 | int(s[1])<<16 | int(s[0])<<24
 }
 
-// cachingConn implements net.Conn, net.PacketConn, and net.Addr.
-type cachingConn struct {
-	sync.Mutex
+func cachingExchange(cache *cache, network, address string) func(*dnsConn, string) (string, error) {
+	return func(parent *dnsConn, req string) (res string, err error) {
+		// check cache
+		if res := cache.get(req); res != "" {
+			return res, nil
+		}
 
-	cache   *cache
-	network string
-	address string
-
-	queue []string
-
-	cancel   context.CancelFunc
-	closer   io.Closer
-	deadline time.Time
-}
-
-// Write implements net.Conn.
-func (c *cachingConn) Write(b []byte) (n int, err error) {
-	c.enqueue(string(b))
-	return len(b), nil
-}
-
-// Read implements net.Conn.
-func (c *cachingConn) Read(b []byte) (n int, err error) {
-	// deque message
-	req := c.dequeue()
-	if req == "" {
-		return 0, io.EOF
-	}
-
-	// check cache
-	if res := c.cache.get(req); res != "" {
-		if len(b) < len(res) {
-			err = io.ErrShortBuffer
+		// dial connection
+		var conn net.Conn
+		dialCtx := parent.getContext()
+		if cache.dial != nil {
+			conn, err = cache.dial(dialCtx, network, address)
 		} else {
-			n = copy(b, res)
+			var d net.Dialer
+			conn, err = d.DialContext(dialCtx, network, address)
 		}
-		return n, err
-	}
-
-	// dial connection
-	var conn net.Conn
-	dialCtx := c.dialContext()
-	if c.cache.dial != nil {
-		conn, err = c.cache.dial(dialCtx, c.network, c.address)
-	} else {
-		var d net.Dialer
-		conn, err = d.DialContext(dialCtx, c.network, c.address)
-	}
-	if err != nil {
-		return 0, err
-	}
-	err = c.setChild(conn)
-	if err != nil {
-		return 0, err
-	}
-
-	// prepare request
-	var mm []byte
-	if _, ok := conn.(net.PacketConn); ok {
-		mm = []byte(req)
-	} else {
-		mm = make([]byte, len(req)+2)
-		mm[0] = byte(len(req) >> 8)
-		mm[1] = byte(len(req))
-		copy(mm[2:], req)
-	}
-
-	// send request
-	nn, err := conn.Write(mm)
-	if err != nil {
-		return 0, err
-	}
-	if nn != len(mm) {
-		return 0, io.ErrShortWrite
-	}
-
-	// read response
-	if _, ok := conn.(net.PacketConn); ok {
-		n, err = conn.Read(b)
-	} else {
-		var sz [2]byte
-		_, err = io.ReadFull(conn, sz[:])
 		if err != nil {
-			return 0, err
+			return "", err
+		}
+		err = parent.setChild(conn)
+		if err != nil {
+			return "", err
 		}
 
-		size := int(sz[0])<<8 | int(sz[1])
-		if len(b) < size {
-			return 0, io.ErrShortBuffer
+		// send request
+		err = writeMessage(conn, req)
+		if err != nil {
+			return "", err
 		}
-		n, err = io.ReadFull(conn, b[:size])
+
+		// read response
+		res, err = readMessage(conn)
+		if err != nil {
+			return "", err
+		}
+
+		// cache response
+		cache.put(req, res)
+		return res, nil
 	}
-
-	// cache response
-	if err == nil {
-		c.cache.put(req, string(b[:n]))
-	}
-
-	return n, err
-}
-
-// Close implements net.Conn, net.PacketConn.
-func (c *cachingConn) Close() error {
-	c.Lock()
-	cancel := c.cancel
-	closer := c.closer
-	c.closer = nil
-	c.Unlock()
-
-	if cancel != nil {
-		cancel()
-	}
-	if closer != nil {
-		return closer.Close()
-	}
-	return nil
-}
-
-// LocalAddr implements net.Conn, net.PacketConn.
-func (c *cachingConn) LocalAddr() net.Addr {
-	return nil
-}
-
-// RemoteAddr implements net.Conn.
-func (c *cachingConn) RemoteAddr() net.Addr {
-	return c
-}
-
-// SetDeadline implements net.Conn, net.PacketConn.
-func (c *cachingConn) SetDeadline(t time.Time) error {
-	c.SetReadDeadline(t)
-	c.SetWriteDeadline(t)
-	return nil
-}
-
-// SetReadDeadline implements net.Conn, net.PacketConn.
-func (c *cachingConn) SetReadDeadline(t time.Time) error {
-	c.Lock()
-	defer c.Unlock()
-	c.deadline = t
-	return nil
-}
-
-// SetWriteDeadline implements net.Conn, net.PacketConn.
-func (c *cachingConn) SetWriteDeadline(t time.Time) error {
-	// writes do not timeout
-	return nil
-}
-
-// ReadFrom implements net.PacketConn.
-func (c *cachingConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	// on a connected PacketConn, ReadFrom does a Read from the RemoteAddr
-	addr = c.RemoteAddr()
-	n, err = c.Read(p)
-	return
-}
-
-// WriteTo implements net.PacketConn.
-func (c *cachingConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	// on a connected PacketConn, WriteTo errors
-	return 0, net.ErrWriteToConnected
-}
-
-// Network implements net.Addr.
-func (c *cachingConn) Network() string {
-	return c.network
-}
-
-// String implements net.Addr.
-func (c *cachingConn) String() string {
-	return c.address
-}
-
-func (c *cachingConn) enqueue(b string) {
-	c.Lock()
-	defer c.Unlock()
-	c.queue = append(c.queue, b)
-}
-
-func (c *cachingConn) dequeue() (msg string) {
-	c.Lock()
-	defer c.Unlock()
-	if len(c.queue) > 0 {
-		msg = c.queue[0]
-		c.queue = c.queue[1:]
-	}
-	return msg
-}
-
-func (c *cachingConn) dialContext() (ctx context.Context) {
-	c.Lock()
-	defer c.Unlock()
-	ctx, c.cancel = context.WithDeadline(context.Background(), c.deadline)
-	return ctx
-}
-
-func (c *cachingConn) setChild(child net.Conn) error {
-	c.Lock()
-	defer c.Unlock()
-	c.closer = child
-	return child.SetDeadline(c.deadline)
 }
