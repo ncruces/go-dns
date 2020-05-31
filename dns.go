@@ -26,7 +26,7 @@ var OpportunisticResolver = &net.Resolver{
 
 func opportunisticDial(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, _ := net.SplitHostPort(address)
-	if (port == "53" || port == "domain") && !hasBadServer(address) {
+	if (port == "53" || port == "domain") && notBadServer(address) {
 		deadline, ok := ctx.Deadline()
 		if ok && deadline.After(time.Now().Add(2*time.Second)) {
 			var d net.Dialer
@@ -51,15 +51,15 @@ var badServers struct {
 	list [4]string
 }
 
-func hasBadServer(address string) bool {
+func notBadServer(address string) bool {
 	badServers.Lock()
 	defer badServers.Unlock()
 	for _, a := range badServers.list {
 		if a == address {
-			return true
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func addBadServer(address string) {
