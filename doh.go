@@ -76,7 +76,7 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 		StrictErrors: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 			conn := &dnsConn{}
-			conn.exchange = dohExchange(uri, &client)
+			conn.roundTrip = dohRoundTrip(uri, &client)
 			return conn, nil
 		},
 	}
@@ -134,10 +134,10 @@ func DoHAddresses(addresses ...string) DoHOption { return dohAddresses(addresses
 // DoHCache adds caching to the resolver, with the given options.
 func DoHCache(options ...CacheOption) DoHOption { return dohCache(options) }
 
-func dohExchange(uri string, client *http.Client) func(*dnsConn, string) (string, error) {
-	return func(parent *dnsConn, msg string) (string, error) {
+func dohRoundTrip(uri string, client *http.Client) roundTripper {
+	return func(ctx context.Context, msg string) (string, error) {
 		// prepare request
-		req, err := http.NewRequestWithContext(parent.getContext(),
+		req, err := http.NewRequestWithContext(ctx,
 			http.MethodPost, uri, strings.NewReader(msg))
 		if err != nil {
 			return "", err

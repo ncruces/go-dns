@@ -32,7 +32,7 @@ func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
 	}
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		conn := &dnsConn{}
-		conn.exchange = cachingExchange(&cache, network, address)
+		conn.roundTrip = cachingRoundTrip(&cache, network, address)
 		return conn, nil
 	}
 }
@@ -242,8 +242,8 @@ func getUint32(s string) int {
 	return int(s[3]) | int(s[2])<<8 | int(s[1])<<16 | int(s[0])<<24
 }
 
-func cachingExchange(cache *cache, network, address string) func(*dnsConn, string) (string, error) {
-	return func(parent *dnsConn, req string) (res string, err error) {
+func cachingRoundTrip(cache *cache, network, address string) roundTripper {
+	return func(ctx context.Context, req string) (res string, err error) {
 		// check cache
 		if res := cache.get(req); res != "" {
 			return res, nil
@@ -251,19 +251,28 @@ func cachingExchange(cache *cache, network, address string) func(*dnsConn, strin
 
 		// dial connection
 		var conn net.Conn
-		dialCtx := parent.getContext()
 		if cache.dial != nil {
-			conn, err = cache.dial(dialCtx, network, address)
+			conn, err = cache.dial(ctx, network, address)
 		} else {
 			var d net.Dialer
-			conn, err = d.DialContext(dialCtx, network, address)
+			conn, err = d.DialContext(ctx, network, address)
 		}
 		if err != nil {
 			return "", err
 		}
-		err = parent.setChild(conn)
-		if err != nil {
-			return "", err
+
+		ctx, cancel := context.WithCancel(ctx)
+		go func() {
+			<-ctx.Done()
+			conn.Close()
+		}()
+		defer cancel()
+
+		if t, ok := ctx.Deadline(); ok {
+			err = conn.SetDeadline(t)
+			if err != nil {
+				return "", err
+			}
 		}
 
 		// send request

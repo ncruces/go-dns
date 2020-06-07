@@ -16,11 +16,13 @@ type dnsConn struct {
 	ibuf bytes.Buffer
 	obuf bytes.Buffer
 
-	cancel   context.CancelFunc
-	closer   io.Closer
-	deadline time.Time
-	exchange func(*dnsConn, string) (string, error)
+	ctx       context.Context
+	cancel    context.CancelFunc
+	deadline  time.Time
+	roundTrip roundTripper
 }
+
+type roundTripper func(ctx context.Context, req string) (res string, err error)
 
 // Read implements net.Conn.
 func (c *dnsConn) Read(b []byte) (n int, err error) {
@@ -29,17 +31,14 @@ func (c *dnsConn) Read(b []byte) (n int, err error) {
 		return n, err
 	}
 
-	omsg, err := c.exchange(c, imsg)
+	ctx, cancel := c.childContext()
+	omsg, err := c.roundTrip(ctx, imsg)
+	cancel()
 	if err != nil {
 		return 0, err
 	}
 
-	c.Lock()
-	defer c.Unlock()
-	c.obuf.WriteByte(byte(len(omsg) >> 8))
-	c.obuf.WriteByte(byte(len(omsg)))
-	c.obuf.WriteString(omsg)
-	return c.obuf.Read(b)
+	return c.fillBuffer(b, omsg)
 }
 
 // Write implements net.Conn.
@@ -53,15 +52,10 @@ func (c *dnsConn) Write(b []byte) (n int, err error) {
 func (c *dnsConn) Close() error {
 	c.Lock()
 	cancel := c.cancel
-	closer := c.closer
-	c.closer = nil
 	c.Unlock()
 
 	if cancel != nil {
 		cancel()
-	}
-	if closer != nil {
-		return closer.Close()
 	}
 	return nil
 }
@@ -126,18 +120,22 @@ func (c *dnsConn) drainBuffers(b []byte) (string, int, error) {
 	return str.String(), 0, nil
 }
 
-func (c *dnsConn) getContext() (ctx context.Context) {
+func (c *dnsConn) fillBuffer(b []byte, str string) (int, error) {
 	c.Lock()
 	defer c.Unlock()
-	ctx, c.cancel = context.WithDeadline(context.Background(), c.deadline)
-	return ctx
+	c.obuf.WriteByte(byte(len(str) >> 8))
+	c.obuf.WriteByte(byte(len(str)))
+	c.obuf.WriteString(str)
+	return c.obuf.Read(b)
 }
 
-func (c *dnsConn) setChild(child net.Conn) error {
+func (c *dnsConn) childContext() (context.Context, context.CancelFunc) {
 	c.Lock()
 	defer c.Unlock()
-	c.closer = child
-	return child.SetDeadline(c.deadline)
+	if c.ctx == nil {
+		c.ctx, c.cancel = context.WithCancel(context.Background())
+	}
+	return context.WithDeadline(c.ctx, c.deadline)
 }
 
 func writeMessage(conn net.Conn, msg string) error {
@@ -159,8 +157,8 @@ func writeMessage(conn net.Conn, msg string) error {
 func readMessage(c net.Conn) (string, error) {
 	if _, ok := c.(net.PacketConn); ok {
 		// RFC 1035 specifies 512 as the maximum message size for DNS over UDP.
-		// But accept the UDPv6 minimum of 1232 payload.
-		b := make([]byte, 1232)
+		// RFC 6891 OTOH suggests 4096 as the maximum payload size for EDNS.
+		b := make([]byte, 4096)
 		n, err := c.Read(b)
 		if err != nil {
 			return "", err
