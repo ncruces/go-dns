@@ -120,12 +120,6 @@ func (c *cache) put(req string, res string) {
 		c.entries = make(map[string]cacheEntry)
 	}
 
-	// remove message IDs
-	c.entries[req[2:]] = cacheEntry{
-		deadline: time.Now().Add(ttl),
-		value:    res[2:],
-	}
-
 	// do some cache evition
 	var tested, evicted int
 	for k, e := range c.entries {
@@ -144,6 +138,12 @@ func (c *cache) put(req string, res string) {
 			delete(c.entries, k)
 		}
 		break
+	}
+
+	// remove message IDs
+	c.entries[req[2:]] = cacheEntry{
+		deadline: time.Now().Add(ttl),
+		value:    res[2:],
 	}
 }
 
