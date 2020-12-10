@@ -129,6 +129,7 @@ func DoHTransport(transport *http.Transport) DoHOption { return (*dohTransport)(
 
 // DoHAddresses sets the network addresses of the resolver.
 // These should be IP addresses, or network addresses of the form "IP:port".
+// This avoids having to resolve the resolver's addresses, improving performance and privacy.
 func DoHAddresses(addresses ...string) DoHOption { return dohAddresses(addresses) }
 
 // DoHCache adds caching to the resolver, with the given options.

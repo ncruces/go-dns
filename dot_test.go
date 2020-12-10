@@ -27,6 +27,11 @@ func ExampleNewDoTResolver() {
 	// 2001:4860:4860::8844
 }
 
+func ExampleDoTAddresses() {
+	dns.NewDoTResolver("dns.google",
+		dns.DoTAddresses("8.8.8.8", "8.8.4.4", "2001:4860:4860::8888", "2001:4860:4860::8844"),
+		dns.DoTCache())
+}
 func TestNewDoTResolver(t *testing.T) {
 	// DNS-over-TLS Public Resolvers
 	tests := map[string]struct {

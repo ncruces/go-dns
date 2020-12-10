@@ -108,6 +108,7 @@ func DoTConfig(config *tls.Config) DoTOption { return (*dotConfig)(config) }
 
 // DoTAddresses sets the network addresses of the resolver.
 // These should be IP addresses, or network addresses of the form "IP:port".
+// This avoids having to resolve the resolver's addresses, improving performance and privacy.
 func DoTAddresses(addresses ...string) DoTOption { return dotAddresses(addresses) }
 
 // DoTCache adds caching to the resolver, with the given options.
