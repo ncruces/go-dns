@@ -45,11 +45,12 @@ func NewDoTResolver(server string, options ...DoTOption) (*net.Resolver, error) 
 	// setup TLS config
 	if opts.config == nil {
 		opts.config = &tls.Config{
-			ServerName:         server,
 			ClientSessionCache: tls.NewLRUClientSessionCache(len(opts.addrs)),
 		}
 	} else {
 		opts.config = opts.config.Clone()
+	}
+	if opts.config.ServerName == "" {
 		opts.config.ServerName = server
 	}
 

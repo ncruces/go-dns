@@ -190,27 +190,3 @@ func parseURITemplate(uri string) (string, error) {
 
 	return str.String(), nil
 }
-
-func baseTransport() *http.Transport {
-	if tr, ok := http.DefaultTransport.(*http.Transport); ok {
-		tr = tr.Clone()
-		tr.Proxy = nil
-		if tr.MaxIdleConnsPerHost < http.DefaultMaxIdleConnsPerHost {
-			tr.MaxIdleConnsPerHost = http.DefaultMaxIdleConnsPerHost
-		}
-		return tr
-	}
-
-	return &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-			DualStack: true,
-		}).DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	}
-}
