@@ -87,3 +87,42 @@ func TestNewDoHResolver(t *testing.T) {
 		}
 	})
 }
+
+func TestNewDoH64Resolver(t *testing.T) {
+	// DNS64-over-HTTPS Public Resolvers
+	tests := map[string]struct {
+		uri  string
+		opts []dns.DoHOption
+	}{
+		"Google":     {uri: "https://dns64.dns.google/dns-query"},
+		"Cloudflare": {uri: "https://dns64.cloudflare-dns.com/dns-query"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			r, err := dns.NewDoHResolver(tc.uri, tc.opts...)
+			if err != nil {
+				t.Fatalf("NewDoHResolver(...) error = %v", err)
+				return
+			}
+
+			e, err := r.LookupIPAddr(context.TODO(), "nxdomain.test")
+			if err == nil {
+				t.Errorf("LookupIPAddr('nxdomain.test') = %v", e)
+			}
+
+			ips, err := r.LookupIPAddr(context.TODO(), "ipv4.google.com")
+			if err != nil {
+				t.Fatalf("LookupIPAddr('ipv4.google.com') error = %v", err)
+				return
+			}
+
+			for _, ip := range ips {
+				if ip.IP.To4() == nil {
+					return
+				}
+			}
+			t.Errorf("LookupIPAddr('ipv4.google.com') = %v", ips)
+		})
+	}
+}

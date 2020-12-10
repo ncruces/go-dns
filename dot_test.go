@@ -92,3 +92,47 @@ func TestNewDoTResolver(t *testing.T) {
 		}
 	})
 }
+
+func TestNewDoT64Resolver(t *testing.T) {
+	// DNS64-over-TLS Public Resolvers
+	tests := map[string]struct {
+		server string
+		opts   []dns.DoTOption
+	}{
+		"Google": {server: "dns64.dns.google"},
+		"Cloudflare": {
+			server: "dns64.cloudflare-dns.com",
+			opts: []dns.DoTOption{
+				dns.DoTAddresses("2606:4700:4700::64", "2606:4700:4700::6400"),
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			r, err := dns.NewDoTResolver(tc.server, tc.opts...)
+			if err != nil {
+				t.Fatalf("NewDoTResolver(...) error = %v", err)
+				return
+			}
+
+			e, err := r.LookupIPAddr(context.TODO(), "nxdomain.test")
+			if err == nil {
+				t.Errorf("LookupIPAddr('nxdomain.test') = %v", e)
+			}
+
+			ips, err := r.LookupIPAddr(context.TODO(), "ipv4.google.com")
+			if err != nil {
+				t.Fatalf("LookupIPAddr('ipv4.google.com') error = %v", err)
+				return
+			}
+
+			for _, ip := range ips {
+				if ip.IP.To4() == nil {
+					return
+				}
+			}
+			t.Errorf("LookupIPAddr('ipv4.google.com') = %v", ips)
+		})
+	}
+}
