@@ -24,9 +24,24 @@ func NewDoTResolver(server string, options ...DoTOption) (*net.Resolver, error) 
 		o.apply(&opts)
 	}
 
+	// get the dialFunc
+	var dialFunc DialFunc
+	var opportunisticResolver *net.Resolver
+	if opts.dialFunc != nil {
+		dialFunc = opts.dialFunc
+		opportunisticResolver = &net.Resolver{
+			Dial:     getAnOpportunisticDialerFromDialFunc(dialFunc),
+			PreferGo: true,
+		}
+	} else {
+		var d net.Dialer
+		dialFunc = d.DialContext
+		opportunisticResolver = OpportunisticResolver
+	}
+
 	// resolve server network addresses
 	if len(opts.addrs) == 0 {
-		ips, err := OpportunisticResolver.LookupIPAddr(context.Background(), server)
+		ips, err := opportunisticResolver.LookupIPAddr(context.Background(), server)
 		if err != nil {
 			return nil, err
 		}
@@ -63,9 +78,8 @@ func NewDoTResolver(server string, options ...DoTOption) (*net.Resolver, error) 
 	// setup dialer
 	var index uint32
 	resolver.Dial = func(ctx context.Context, network, address string) (net.Conn, error) {
-		var d net.Dialer
 		s := atomic.LoadUint32(&index)
-		conn, err := d.DialContext(ctx, "tcp", opts.addrs[s])
+		conn, err := dialFunc(ctx, "tcp", opts.addrs[s])
 		if err != nil {
 			atomic.CompareAndSwapUint32(&index, s, (s+1)%uint32(len(opts.addrs)))
 			return nil, err
@@ -91,17 +105,20 @@ type dotOpts struct {
 	addrs     []string
 	cache     bool
 	cacheOpts []CacheOption
+	dialFunc  DialFunc
 }
 
 type (
 	dotConfig    tls.Config
 	dotAddresses []string
 	dotCache     []CacheOption
+	dotDialFunc  DialFunc
 )
 
 func (o *dotConfig) apply(t *dotOpts)   { t.config = (*tls.Config)(o) }
 func (o dotAddresses) apply(t *dotOpts) { t.addrs = ([]string)(o) }
 func (o dotCache) apply(t *dotOpts)     { t.cache = true; t.cacheOpts = ([]CacheOption)(o) }
+func (o dotDialFunc) apply(t *dotOpts)  { t.dialFunc = (DialFunc)(o) }
 
 // DoTConfig sets the tls.Config used by the resolver.
 func DoTConfig(config *tls.Config) DoTOption { return (*dotConfig)(config) }
@@ -113,3 +130,7 @@ func DoTAddresses(addresses ...string) DoTOption { return dotAddresses(addresses
 
 // DoTCache adds caching to the resolver, with the given options.
 func DoTCache(options ...CacheOption) DoTOption { return dotCache(options) }
+
+// DoTDialFunc sets the DialFunc used by the resolver.
+// By default net#Dialer.DialContext is used.
+func DoTDialFunc(f DialFunc) DoTOption { return dotDialFunc(f) }

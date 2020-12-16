@@ -35,9 +35,24 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 		o.apply(&opts)
 	}
 
+	// get the dialFunc
+	var dialFunc DialFunc
+	var opportunisticResolver *net.Resolver
+	if opts.dialFunc != nil {
+		dialFunc = opts.dialFunc
+		opportunisticResolver = &net.Resolver{
+			Dial:     getAnOpportunisticDialerFromDialFunc(dialFunc),
+			PreferGo: true,
+		}
+	} else {
+		var d net.Dialer
+		dialFunc = d.DialContext
+		opportunisticResolver = OpportunisticResolver
+	}
+
 	// resolve server network addresses
 	if len(opts.addrs) == 0 {
-		ips, err := OpportunisticResolver.LookupIPAddr(context.Background(), url.Hostname())
+		ips, err := opportunisticResolver.LookupIPAddr(context.Background(), url.Hostname())
 		if err != nil {
 			return nil, err
 		}
@@ -84,9 +99,8 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 	// setup dialer
 	var index uint32
 	opts.transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		var d net.Dialer
 		s := atomic.LoadUint32(&index)
-		conn, err := d.DialContext(ctx, network, opts.addrs[s])
+		conn, err := dialFunc(ctx, network, opts.addrs[s])
 		if err != nil {
 			atomic.CompareAndSwapUint32(&index, s, (s+1)%uint32(len(opts.addrs)))
 			return nil, err
@@ -112,17 +126,20 @@ type dohOpts struct {
 	addrs     []string
 	cache     bool
 	cacheOpts []CacheOption
+	dialFunc  DialFunc
 }
 
 type (
 	dohTransport http.Transport
 	dohAddresses []string
 	dohCache     []CacheOption
+	dohDialFunc  DialFunc
 )
 
 func (o *dohTransport) apply(t *dohOpts) { t.transport = (*http.Transport)(o) }
 func (o dohAddresses) apply(t *dohOpts)  { t.addrs = ([]string)(o) }
 func (o dohCache) apply(t *dohOpts)      { t.cache = true; t.cacheOpts = ([]CacheOption)(o) }
+func (o dohDialFunc) apply(t *dohOpts)   { t.dialFunc = (DialFunc)(o) }
 
 // DoHTransport sets the http.Transport used by the resolver.
 func DoHTransport(transport *http.Transport) DoHOption { return (*dohTransport)(transport) }
@@ -134,6 +151,10 @@ func DoHAddresses(addresses ...string) DoHOption { return dohAddresses(addresses
 
 // DoHCache adds caching to the resolver, with the given options.
 func DoHCache(options ...CacheOption) DoHOption { return dohCache(options) }
+
+// DoHDialFunc sets the DialFunc used by the resolver.
+// By default net#Dialer.DialContext is used.
+func DoHDialFunc(f DialFunc) DoHOption { return dohDialFunc(f) }
 
 func dohRoundTrip(uri string, client *http.Client) roundTripper {
 	return func(ctx context.Context, msg string) (string, error) {
