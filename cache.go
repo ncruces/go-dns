@@ -133,7 +133,7 @@ func (c *cache) put(req string, res string) {
 		if tested < 8 {
 			continue
 		}
-		if evicted == 0 && c.maxEntries > 0 && len(c.entries) > c.maxEntries {
+		if evicted == 0 && c.maxEntries > 0 && len(c.entries) >= c.maxEntries {
 			// delete at least one entry
 			delete(c.entries, k)
 		}
