@@ -73,3 +73,6 @@ func addBadServer(address string) {
 	badServers.list[badServers.next] = address
 	badServers.next = (badServers.next + 1) % len(badServers.list)
 }
+
+// DialFunc is a net.Resolver.Dial function.
+type DialFunc func(ctx context.Context, network, address string) (net.Conn, error)

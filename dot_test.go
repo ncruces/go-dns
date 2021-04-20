@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ncruces/go-dns"
@@ -32,6 +34,7 @@ func ExampleDoTAddresses() {
 		dns.DoTAddresses("8.8.8.8", "8.8.4.4", "2001:4860:4860::8888", "2001:4860:4860::8844"),
 		dns.DoTCache())
 }
+
 func TestNewDoTResolver(t *testing.T) {
 	// DNS-over-TLS Public Resolvers
 	tests := map[string]struct {
@@ -94,6 +97,42 @@ func TestNewDoTResolver(t *testing.T) {
 
 		if !check(a, b) {
 			t.Errorf("LookupIPAddr('one.one.one.one') = %v [wanted %v]", b, a)
+		}
+	})
+
+	t.Run("DialFunc", func(t *testing.T) {
+		var d net.Dialer
+		var called uintptr
+		r, err := dns.NewDoTResolver("cloudflare-dns.com",
+			dns.DoTAddresses("1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001"),
+			dns.DoTDialFunc(func(ctx context.Context, net, addr string) (net.Conn, error) {
+				atomic.StoreUintptr(&called, 1)
+				return d.DialContext(ctx, net, addr)
+			}),
+		)
+		if err != nil {
+			t.Fatalf("NewDoTResolver(...) error = %v", err)
+			return
+		}
+
+		e, err := r.LookupIPAddr(context.TODO(), "nxdomain.test")
+		if err == nil {
+			t.Errorf("LookupIPAddr('nxdomain.test') = %v", e)
+		}
+
+		ips, err := r.LookupIPAddr(context.TODO(), "one.one.one.one")
+		if err != nil {
+			t.Fatalf("LookupIPAddr('one.one.one.one') error = %v", err)
+			return
+		}
+
+		if !checkIPAddrs(ips, "1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001") {
+			t.Errorf("LookupIPAddr('one.one.one.one') = %v", ips)
+		}
+
+		if called == 0 {
+			t.Errorf("DialFunc not called")
+			return
 		}
 	})
 }

@@ -62,9 +62,6 @@ func MaxCacheTTL(d time.Duration) CacheOption { return maxTTLOption(d) }
 // MinCacheTTL sets the minimum time-to-live for entries in the cache.
 func MinCacheTTL(d time.Duration) CacheOption { return minTTLOption(d) }
 
-// DialFunc is a net.Resolver.Dial function.
-type DialFunc func(ctx context.Context, network, address string) (net.Conn, error)
-
 type cache struct {
 	sync.RWMutex
 
