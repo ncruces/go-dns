@@ -195,12 +195,14 @@ func getTTL(msg string) time.Duration {
 		if name < 0 || name+10 > len(msg) {
 			return -1
 		}
+		rtyp := getUint16(msg[name+0:])
 		rttl := getUint32(msg[name+4:])
 		rlen := getUint16(msg[name+8:])
 		if name+10+rlen > len(msg) {
 			return -1
 		}
-		if rttl < ttl {
+		// skip EDNS OPT since it doesn't have a TTL
+		if rtyp != 41 && rttl < ttl {
 			ttl = rttl
 		}
 		msg = msg[name+10+rlen:]

@@ -1,3 +1,3 @@
 module github.com/ncruces/go-dns
 
-go 1.14
+go 1.18

@@ -5,7 +5,7 @@ import (
 	"reflect"
 )
 
-func check(a, b interface{}) bool {
+func check(a, b any) bool {
 	return reflect.DeepEqual(a, b)
 }
 
