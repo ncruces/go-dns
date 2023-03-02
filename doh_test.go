@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/ncruces/go-dns"
 )
@@ -75,7 +77,8 @@ func TestNewDoHResolver(t *testing.T) {
 	}
 
 	t.Run("Cache", func(t *testing.T) {
-		r, err := dns.NewDoHResolver("https://1.1.1.1/dns-query", dns.DoHCache())
+		r, err := dns.NewDoHResolver("https://1.1.1.1/dns-query",
+			dns.DoHCache(dns.MinCacheTTL(time.Minute)))
 		if err != nil {
 			t.Fatalf("NewDoHResolver(...) error = %v", err)
 			return
@@ -100,6 +103,13 @@ func TestNewDoHResolver(t *testing.T) {
 }
 
 func TestNewDoH64Resolver(t *testing.T) {
+	// Test IPv6 connectivity (broken on GitHub Actions).
+	if c, err := net.Dial("tcp", "ipv6.google.com:80"); err != nil {
+		t.Skip("IPv6 not supported.")
+	} else {
+		c.Close()
+	}
+
 	// DNS64-over-HTTPS Public Resolvers
 	tests := map[string]struct {
 		uri  string

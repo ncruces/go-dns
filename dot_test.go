@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ncruces/go-dns"
 )
@@ -77,7 +78,8 @@ func TestNewDoTResolver(t *testing.T) {
 	}
 
 	t.Run("Cache", func(t *testing.T) {
-		r, err := dns.NewDoTResolver("1.1.1.1", dns.DoTCache())
+		r, err := dns.NewDoTResolver("1.1.1.1",
+			dns.DoTCache(dns.MinCacheTTL(time.Minute)))
 		if err != nil {
 			t.Fatalf("NewDoTResolver(...) error = %v", err)
 			return
@@ -138,6 +140,13 @@ func TestNewDoTResolver(t *testing.T) {
 }
 
 func TestNewDoT64Resolver(t *testing.T) {
+	// Test IPv6 connectivity (broken on GitHub Actions).
+	if c, err := net.Dial("tcp", "ipv6.google.com:80"); err != nil {
+		t.Skip("IPv6 not supported.")
+	} else {
+		c.Close()
+	}
+
 	// DNS64-over-TLS Public Resolvers
 	tests := map[string]struct {
 		server string
