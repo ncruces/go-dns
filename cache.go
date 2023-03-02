@@ -86,13 +86,13 @@ func (c *cache) put(req string, res string) {
 	if req[0] != res[0] || req[1] != res[1] { // IDs match
 		return
 	}
-	if req[2] >= 0x7f || res[2] < 0x7f { // one query, one response
+	if req[2] >= 0x7f || res[2] < 0x7f { // query, response
 		return
 	}
 	if req[2]&0x7a != 0 || res[2]&0x7a != 0 { // standard query, not truncated
 		return
 	}
-	if res[3]&0x7f != 0 && res[3]&0x7f != 3 { // no error, or name error
+	if res[3]&0xf != 0 && res[3]&0xf != 3 { // no error, or name error
 		return
 	}
 
