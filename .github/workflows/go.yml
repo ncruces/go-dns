@@ -17,7 +17,7 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Set up Go
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v4
       with:
         go-version: oldstable
 
@@ -31,6 +31,6 @@ jobs:
       run: go test -v -race ./...
 
     - name: Update coverage report
-      uses: ncruces/go-coverage-report@main
+      uses: ncruces/go-coverage-report@v0
       if: github.event_name == 'push'
       continue-on-error: true
