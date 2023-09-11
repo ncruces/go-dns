@@ -23,7 +23,7 @@ func NewCachingResolver(parent *net.Resolver, options ...CacheOption) *net.Resol
 
 // NewCachingDialer adds caching to a net.Resolver.Dial function.
 func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
-	var cache = cache{dial: parent}
+	var cache = cache{dial: parent, negative: true}
 	for _, o := range options {
 		o.apply(&cache)
 	}
@@ -47,10 +47,12 @@ type CacheOption interface {
 type maxEntriesOption int
 type maxTTLOption time.Duration
 type minTTLOption time.Duration
+type negativeCacheOption bool
 
-func (o maxEntriesOption) apply(c *cache) { c.maxEntries = int(o) }
-func (o maxTTLOption) apply(c *cache)     { c.maxTTL = time.Duration(o) }
-func (o minTTLOption) apply(c *cache)     { c.minTTL = time.Duration(o) }
+func (o maxEntriesOption) apply(c *cache)    { c.maxEntries = int(o) }
+func (o maxTTLOption) apply(c *cache)        { c.maxTTL = time.Duration(o) }
+func (o minTTLOption) apply(c *cache)        { c.minTTL = time.Duration(o) }
+func (o negativeCacheOption) apply(c *cache) { c.negative = bool(o) }
 
 // MaxCacheEntries sets the maximum number of entries to cache.
 // If zero, DefaultMaxCacheEntries is used; negative means no limit.
@@ -62,6 +64,9 @@ func MaxCacheTTL(d time.Duration) CacheOption { return maxTTLOption(d) }
 // MinCacheTTL sets the minimum time-to-live for entries in the cache.
 func MinCacheTTL(d time.Duration) CacheOption { return minTTLOption(d) }
 
+// NegativeCache sets whether to cache negative responses.
+func NegativeCache(b bool) CacheOption { return negativeCacheOption(b) }
+
 type cache struct {
 	sync.RWMutex
 
@@ -71,6 +76,7 @@ type cache struct {
 	maxEntries int
 	maxTTL     time.Duration
 	minTTL     time.Duration
+	negative   bool
 }
 
 type cacheEntry struct {
@@ -79,20 +85,13 @@ type cacheEntry struct {
 }
 
 func (c *cache) put(req string, res string) {
-	// ignore invalid/unmatched messages
-	if len(req) < 12 || len(res) < 12 { // header size
+	// ignore uncacheable/unparseable answers
+	if invalid(req, res) {
 		return
 	}
-	if req[0] != res[0] || req[1] != res[1] { // IDs match
-		return
-	}
-	if req[2] >= 0x7f || res[2] < 0x7f { // query, response
-		return
-	}
-	if req[2]&0x7a != 0 || res[2]&0x7a != 0 { // standard query, not truncated
-		return
-	}
-	if res[3]&0xf != 0 && res[3]&0xf != 3 { // no error, or name error
+
+	// ignore errors (if requested)
+	if nameError(res) && !c.negative {
 		return
 	}
 
@@ -167,6 +166,29 @@ func (c *cache) get(req string) (res string) {
 		return req[:2] + entry.value
 	}
 	return ""
+}
+
+func invalid(req string, res string) bool {
+	if len(req) < 12 || len(res) < 12 { // header size
+		return true
+	}
+	if req[0] != res[0] || req[1] != res[1] { // IDs match
+		return true
+	}
+	if req[2] >= 0x7f || res[2] < 0x7f { // query, response
+		return true
+	}
+	if req[2]&0x7a != 0 || res[2]&0x7a != 0 { // standard query, not truncated
+		return true
+	}
+	if res[3]&0xf != 0 && res[3]&0xf != 3 { // no error, or name error
+		return true
+	}
+	return false
+}
+
+func nameError(res string) bool {
+	return res[3]&0xf == 3
 }
 
 func getTTL(msg string) time.Duration {
