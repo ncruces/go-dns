@@ -30,7 +30,10 @@ jobs:
     - name: Test data races
       run: go test -v -race ./...
 
-    - name: Update coverage report
+    - name: Coverage report
       uses: ncruces/go-coverage-report@v0
+      with:
+        amend: 'true'
+        reuse-go: 'true'
       if: github.event_name == 'push'
       continue-on-error: true
