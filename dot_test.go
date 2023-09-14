@@ -139,7 +139,7 @@ func TestNewDoTResolver(t *testing.T) {
 	})
 }
 
-func TestNewDoT64Resolver(t *testing.T) {
+func TestNewDoTResolver_64(t *testing.T) {
 	// Test IPv6 connectivity (broken on GitHub Actions).
 	if c, err := net.Dial("tcp", "ipv6.google.com:80"); err != nil {
 		t.Skip("IPv6 not supported.")
