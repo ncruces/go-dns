@@ -21,7 +21,7 @@ func NewCachingResolver(parent *net.Resolver, options ...CacheOption) *net.Resol
 	}
 }
 
-// NewCachingDialer adds caching to a net.Resolver.Dial function.
+// NewCachingDialer adds caching to a [net.Resolver.Dial] function.
 func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
 	var cache = cache{dial: parent, negative: true}
 	for _, o := range options {

@@ -24,7 +24,6 @@ type dnsConn struct {
 
 type roundTripper func(ctx context.Context, req string) (res string, err error)
 
-// Read implements net.Conn.
 func (c *dnsConn) Read(b []byte) (n int, err error) {
 	imsg, n, err := c.drainBuffers(b)
 	if n != 0 || err != nil {
@@ -41,14 +40,12 @@ func (c *dnsConn) Read(b []byte) (n int, err error) {
 	return c.fillBuffer(b, omsg)
 }
 
-// Write implements net.Conn.
 func (c *dnsConn) Write(b []byte) (n int, err error) {
 	c.Lock()
 	defer c.Unlock()
 	return c.ibuf.Write(b)
 }
 
-// Close implements net.Conn.
 func (c *dnsConn) Close() error {
 	c.Lock()
 	cancel := c.cancel
@@ -60,24 +57,20 @@ func (c *dnsConn) Close() error {
 	return nil
 }
 
-// LocalAddr implements net.Conn.
 func (c *dnsConn) LocalAddr() net.Addr {
 	return nil
 }
 
-// RemoteAddr implements net.Conn.
 func (c *dnsConn) RemoteAddr() net.Addr {
 	return nil
 }
 
-// SetDeadline implements net.Conn.
 func (c *dnsConn) SetDeadline(t time.Time) error {
 	c.SetReadDeadline(t)
 	c.SetWriteDeadline(t)
 	return nil
 }
 
-// SetReadDeadline implements net.Conn.
 func (c *dnsConn) SetReadDeadline(t time.Time) error {
 	c.Lock()
 	defer c.Unlock()
@@ -85,7 +78,6 @@ func (c *dnsConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-// SetWriteDeadline implements net.Conn.
 func (c *dnsConn) SetWriteDeadline(t time.Time) error {
 	// writes do not timeout
 	return nil

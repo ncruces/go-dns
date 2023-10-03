@@ -123,5 +123,5 @@ func DoTAddresses(addresses ...string) DoTOption { return dotAddresses(addresses
 func DoTCache(options ...CacheOption) DoTOption { return dotCache(options) }
 
 // DoTDialFunc sets the DialFunc used by the resolver.
-// By default net#Dialer.DialContext is used.
+// By default [net.Dialer.DialContext] is used.
 func DoTDialFunc(f DialFunc) DoTOption { return dotDialFunc(f) }
