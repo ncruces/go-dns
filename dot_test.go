@@ -104,11 +104,11 @@ func TestNewDoTResolver(t *testing.T) {
 
 	t.Run("DialFunc", func(t *testing.T) {
 		var d net.Dialer
-		var called uintptr
+		var called atomic.Bool
 		r, err := dns.NewDoTResolver("cloudflare-dns.com",
 			dns.DoTAddresses("1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001"),
 			dns.DoTDialFunc(func(ctx context.Context, net, addr string) (net.Conn, error) {
-				atomic.StoreUintptr(&called, 1)
+				called.Store(true)
 				return d.DialContext(ctx, net, addr)
 			}),
 		)
@@ -132,7 +132,7 @@ func TestNewDoTResolver(t *testing.T) {
 			t.Errorf("LookupIPAddr('one.one.one.one') = %v", ips)
 		}
 
-		if called == 0 {
+		if !called.Load() {
 			t.Errorf("DialFunc not called")
 			return
 		}

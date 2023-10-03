@@ -67,12 +67,12 @@ func NewDoTResolver(server string, options ...DoTOption) (*net.Resolver, error) 
 	}
 
 	// setup dialer
-	var index uint32
+	var index atomic.Uint32
 	resolver.Dial = func(ctx context.Context, network, address string) (net.Conn, error) {
-		s := atomic.LoadUint32(&index)
-		conn, err := opts.dialFunc(ctx, "tcp", opts.addrs[s])
+		i := index.Load()
+		conn, err := opts.dialFunc(ctx, "tcp", opts.addrs[i])
 		if err != nil {
-			atomic.CompareAndSwapUint32(&index, s, (s+1)%uint32(len(opts.addrs)))
+			index.CompareAndSwap(i, (i+1)%uint32(len(opts.addrs)))
 			return nil, err
 		}
 		return tls.Client(conn, opts.config), nil

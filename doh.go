@@ -82,13 +82,13 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 	}
 
 	// setup dialer
-	var index uint32
+	var index atomic.Uint32
 	opts.transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		var d net.Dialer
-		s := atomic.LoadUint32(&index)
-		conn, err := d.DialContext(ctx, network, opts.addrs[s])
+		i := index.Load()
+		conn, err := d.DialContext(ctx, network, opts.addrs[i])
 		if err != nil {
-			atomic.CompareAndSwapUint32(&index, s, (s+1)%uint32(len(opts.addrs)))
+			index.CompareAndSwap(i, (i+1)%uint32(len(opts.addrs)))
 			return nil, err
 		}
 		return conn, err
