@@ -72,8 +72,7 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 
 	// create the resolver
 	var resolver = net.Resolver{
-		PreferGo:     true,
-		StrictErrors: true,
+		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 			conn := &dnsConn{}
 			conn.roundTrip = dohRoundTrip(uri, &client)
@@ -89,7 +88,6 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 		conn, err := d.DialContext(ctx, network, opts.addrs[i])
 		if err != nil {
 			index.CompareAndSwap(i, (i+1)%uint32(len(opts.addrs)))
-			return nil, err
 		}
 		return conn, err
 	}
@@ -102,7 +100,7 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 	return &resolver, nil
 }
 
-// An DoHOption customizes the DNS over HTTPS resolver.
+// A DoHOption customizes the DNS over HTTPS resolver.
 type DoHOption interface {
 	apply(*dohOpts)
 }

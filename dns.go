@@ -1,7 +1,7 @@
-// Package dns provides net.Resolver instances implementing caching,
+// Package dns provides [net.Resolver] instances implementing caching,
 // opportunistic encryption, and DNS over TLS/HTTPS.
 //
-// To replace the net.DefaultResolver with a caching DNS over HTTPS instance
+// To replace the [net.DefaultResolver] with a caching DNS over HTTPS instance
 // using the Google Public DNS resolver:
 //
 //	net.DefaultResolver = dns.NewDoHResolver(

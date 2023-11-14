@@ -61,10 +61,7 @@ func NewDoTResolver(server string, options ...DoTOption) (*net.Resolver, error) 
 	}
 
 	// create the resolver
-	var resolver = net.Resolver{
-		PreferGo:     true,
-		StrictErrors: true,
-	}
+	var resolver = net.Resolver{PreferGo: true}
 
 	// setup dialer
 	var index atomic.Uint32

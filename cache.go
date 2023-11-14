@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// NewCachingResolver creates a caching net.Resolver that uses parent to resolve names.
+// NewCachingResolver creates a caching [net.Resolver] that uses parent to resolve names.
 func NewCachingResolver(parent *net.Resolver, options ...CacheOption) *net.Resolver {
 	if parent == nil {
 		parent = &net.Resolver{}
@@ -55,7 +55,7 @@ func (o minTTLOption) apply(c *cache)        { c.minTTL = time.Duration(o) }
 func (o negativeCacheOption) apply(c *cache) { c.negative = bool(o) }
 
 // MaxCacheEntries sets the maximum number of entries to cache.
-// If zero, DefaultMaxCacheEntries is used; negative means no limit.
+// If zero, [DefaultMaxCacheEntries] is used; negative means no limit.
 func MaxCacheEntries(n int) CacheOption { return maxEntriesOption(n) }
 
 // MaxCacheTTL sets the maximum time-to-live for entries in the cache.
