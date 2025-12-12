@@ -168,8 +168,8 @@ func parseURITemplate(uri string) (string, error) {
 	var str strings.Builder
 	var exp bool
 
-	for i := 0; i < len(uri); i++ {
-		switch c := uri[i]; c {
+	for _, c := range []byte(uri) {
+		switch c {
 		case '{':
 			if exp {
 				return "", errors.New("uri: invalid syntax")

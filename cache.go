@@ -203,7 +203,7 @@ func getTTL(msg string) time.Duration {
 	msg = msg[12:] // skip header
 
 	// skip questions
-	for i := 0; i < qdcount; i++ {
+	for range qdcount {
 		name := getNameLen(msg)
 		if name < 0 || name+4 > len(msg) {
 			return -1
@@ -212,7 +212,7 @@ func getTTL(msg string) time.Duration {
 	}
 
 	// parse records
-	for i := 0; i < rdcount; i++ {
+	for range rdcount {
 		name := getNameLen(msg)
 		if name < 0 || name+10 > len(msg) {
 			return -1

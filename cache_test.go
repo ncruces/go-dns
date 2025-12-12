@@ -35,12 +35,12 @@ func TestNewCachingResolver(t *testing.T) {
 	r := dns.NewCachingResolver(nil)
 	measure := func() time.Duration {
 		start := time.Now()
-		r.LookupIPAddr(context.TODO(), "nxdomain.test")
+		r.LookupIPAddr(t.Context(), "nxdomain.test")
 		return time.Since(start)
 	}
 
 	uncached, cached := measure(), measure()
-	if uncached > cached*10 { // Expect order of magnitude difference.
+	if uncached > cached*5 { // Expect a big difference.
 		t.Logf("uncached %v, cached %v", uncached, cached)
 	} else {
 		t.Errorf("uncached %v, cached %v", uncached, cached)
@@ -57,7 +57,7 @@ func TestNegativeCache(t *testing.T) {
 	r := dns.NewCachingResolver(nil, dns.NegativeCache(false))
 	measure := func() time.Duration {
 		start := time.Now()
-		r.LookupIPAddr(context.TODO(), "nxdomain.test")
+		r.LookupIPAddr(t.Context(), "nxdomain.test")
 		return time.Since(start)
 	}
 

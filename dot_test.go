@@ -60,12 +60,12 @@ func TestNewDoTResolver(t *testing.T) {
 				return
 			}
 
-			e, err := r.LookupIPAddr(context.TODO(), "nxdomain.test")
+			e, err := r.LookupIPAddr(t.Context(), "nxdomain.test")
 			if err == nil {
 				t.Errorf("LookupIPAddr('nxdomain.test') = %v", e)
 			}
 
-			ips, err := r.LookupIPAddr(context.TODO(), "one.one.one.one")
+			ips, err := r.LookupIPAddr(t.Context(), "one.one.one.one")
 			if err != nil {
 				t.Fatalf("LookupIPAddr('one.one.one.one') error = %v", err)
 				return
@@ -85,13 +85,13 @@ func TestNewDoTResolver(t *testing.T) {
 			return
 		}
 
-		a, err := r.LookupIPAddr(context.TODO(), "one.one.one.one")
+		a, err := r.LookupIPAddr(t.Context(), "one.one.one.one")
 		if err != nil {
 			t.Fatalf("LookupIPAddr('one.one.one.one') error = %v", err)
 			return
 		}
 
-		b, err := r.LookupIPAddr(context.TODO(), "one.one.one.one")
+		b, err := r.LookupIPAddr(t.Context(), "one.one.one.one")
 		if err != nil {
 			t.Fatalf("LookupIPAddr('one.one.one.one') error = %v", err)
 			return
@@ -117,12 +117,12 @@ func TestNewDoTResolver(t *testing.T) {
 			return
 		}
 
-		e, err := r.LookupIPAddr(context.TODO(), "nxdomain.test")
+		e, err := r.LookupIPAddr(t.Context(), "nxdomain.test")
 		if err == nil {
 			t.Errorf("LookupIPAddr('nxdomain.test') = %v", e)
 		}
 
-		ips, err := r.LookupIPAddr(context.TODO(), "one.one.one.one")
+		ips, err := r.LookupIPAddr(t.Context(), "one.one.one.one")
 		if err != nil {
 			t.Fatalf("LookupIPAddr('one.one.one.one') error = %v", err)
 			return
@@ -169,12 +169,12 @@ func TestNewDoTResolver_64(t *testing.T) {
 				return
 			}
 
-			e, err := r.LookupIPAddr(context.TODO(), "nxdomain.test")
+			e, err := r.LookupIPAddr(t.Context(), "nxdomain.test")
 			if err == nil {
 				t.Errorf("LookupIPAddr('nxdomain.test') = %v", e)
 			}
 
-			ips, err := r.LookupIPAddr(context.TODO(), "ipv4.google.com")
+			ips, err := r.LookupIPAddr(t.Context(), "ipv4.google.com")
 			if err != nil {
 				t.Fatalf("LookupIPAddr('ipv4.google.com') error = %v", err)
 				return
