@@ -11,15 +11,14 @@ import (
 )
 
 type dnsConn struct {
-	sync.Mutex
-
-	ibuf bytes.Buffer
-	obuf bytes.Buffer
-
-	ctx       context.Context
-	cancel    context.CancelFunc
-	deadline  time.Time
+	cancel    context.CancelFunc // +checklocks:Mutex
+	deadline  time.Time          // +checklocks:Mutex
 	roundTrip roundTripper
+
+	ibuf bytes.Buffer // +checklocks:Mutex
+	obuf bytes.Buffer // +checklocks:Mutex
+
+	sync.Mutex
 }
 
 type roundTripper func(ctx context.Context, req string) (res string, err error)
@@ -115,6 +114,7 @@ func (c *dnsConn) drainBuffers(b []byte) (string, int, error) {
 func (c *dnsConn) fillBuffer(b []byte, str string) (int, error) {
 	c.Lock()
 	defer c.Unlock()
+	c.obuf.Grow(len(str) + 2)
 	c.obuf.WriteByte(byte(len(str) >> 8))
 	c.obuf.WriteByte(byte(len(str)))
 	c.obuf.WriteString(str)
@@ -124,16 +124,17 @@ func (c *dnsConn) fillBuffer(b []byte, str string) (int, error) {
 func (c *dnsConn) childContext() (context.Context, context.CancelFunc) {
 	c.Lock()
 	defer c.Unlock()
-	if c.ctx == nil {
-		c.ctx, c.cancel = context.WithCancel(context.Background())
+	ctx := context.Background()
+	if c.deadline.IsZero() {
+		return ctx, func() {}
 	}
-	return context.WithDeadline(c.ctx, c.deadline)
+	return context.WithDeadline(ctx, c.deadline)
 }
 
 func writeMessage(conn net.Conn, msg string) error {
 	var buf []byte
-	pc, ok := conn.(net.PacketConn)
-	if ok {
+	pc, udp := conn.(net.PacketConn)
+	if udp {
 		buf = []byte(msg)
 	} else {
 		buf = make([]byte, len(msg)+2)
@@ -144,10 +145,11 @@ func writeMessage(conn net.Conn, msg string) error {
 	// SHOULD do a single write on TCP (RFC 7766, section 8).
 	// MUST do a single write on UDP.
 	_, err := conn.Write(buf)
-	if err != nil && ok {
+	if err != nil && udp {
+		// Write failed, maybe WriteTo can work.
 		if addr := conn.RemoteAddr(); addr != nil {
-			_, err2 := pc.WriteTo(buf, addr)
-			if err2 == nil {
+			_, err := pc.WriteTo(buf, addr)
+			if err == nil {
 				return nil
 			}
 		}
@@ -156,7 +158,7 @@ func writeMessage(conn net.Conn, msg string) error {
 }
 
 func readMessage(c net.Conn) (string, error) {
-	if _, ok := c.(net.PacketConn); ok {
+	if _, udp := c.(net.PacketConn); udp {
 		// RFC 1035 specifies 512 as the maximum message size for DNS over UDP.
 		// RFC 6891 OTOH suggests 4096 as the maximum payload size for EDNS.
 		b := make([]byte, 4096)

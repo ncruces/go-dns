@@ -90,10 +90,10 @@ type DoTOption interface {
 
 type dotOpts struct {
 	config    *tls.Config
-	addrs     []string
-	cache     bool
-	cacheOpts []CacheOption
 	dialFunc  DialFunc
+	addrs     []string
+	cacheOpts []CacheOption
+	cache     bool
 }
 
 type (

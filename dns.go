@@ -46,9 +46,9 @@ func opportunisticDial(ctx context.Context, network, address string) (net.Conn, 
 }
 
 var badServers struct {
+	list [4]string // +checklocks:Mutex
+	next int       // +checklocks:Mutex
 	sync.Mutex
-	next int
-	list [4]string
 }
 
 func notBadServer(address string) bool {

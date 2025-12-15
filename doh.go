@@ -74,9 +74,7 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 	var resolver = net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			conn := &dnsConn{}
-			conn.roundTrip = dohRoundTrip(uri, &client)
-			return conn, nil
+			return &dnsConn{roundTrip: dohRoundTrip(uri, &client)}, nil
 		},
 	}
 
@@ -108,8 +106,8 @@ type DoHOption interface {
 type dohOpts struct {
 	transport *http.Transport
 	addrs     []string
-	cache     bool
 	cacheOpts []CacheOption
+	cache     bool
 }
 
 type (
