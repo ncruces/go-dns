@@ -6,8 +6,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"golang.org/x/sync/singleflight"
 )
 
 // NewCachingResolver creates a caching [net.Resolver] that uses parent to resolve names.
@@ -69,7 +67,6 @@ func NegativeCache(b bool) CacheOption { return negativeCacheOption(b) }
 
 type cache struct {
 	dial    DialFunc
-	single  singleflight.Group
 	entries map[string]cacheEntry // +checklocks:RWMutex
 
 	maxEntries int
@@ -145,6 +142,14 @@ func (c *cache) put(req string, res string) {
 }
 
 func (c *cache) get(req string) (res string) {
+	// ignore invalid messages
+	if len(req) < 12 {
+		return ""
+	}
+	if req[2] >= 0x7f {
+		return ""
+	}
+
 	c.RLock()
 	defer c.RUnlock()
 
@@ -257,7 +262,12 @@ func getUint32(s string) int {
 }
 
 func cachingRoundTrip(cache *cache, network, address string) roundTripper {
-	roundTrip := func(ctx context.Context, req string) (res string, err error) {
+	return func(ctx context.Context, req string) (res string, err error) {
+		// check cache
+		if res := cache.get(req); res != "" {
+			return res, nil
+		}
+
 		// dial connection
 		var conn net.Conn
 		if cache.dial != nil {
@@ -299,18 +309,5 @@ func cachingRoundTrip(cache *cache, network, address string) roundTripper {
 		// cache response
 		cache.put(req, res)
 		return res, nil
-	}
-
-	return func(ctx context.Context, req string) (string, error) {
-		// Passthrough uncacheable requests
-		if len(req) < 2 {
-			return roundTrip(ctx, req)
-		}
-		// check cache
-		if res := cache.get(req); res != "" {
-			return res, nil
-		}
-		res, err, _ := cache.single.Do(req[2:], func() (any, error) { return roundTrip(ctx, req) })
-		return res.(string), err
 	}
 }
