@@ -23,23 +23,31 @@ func NewCachingResolver(parent *net.Resolver, options ...CacheOption) *net.Resol
 
 // NewCachingDialer adds caching to a [net.Resolver.Dial] function.
 func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
-	var cache = cache{dial: parent, negative: true}
+	c := NewCache(options...)
+	c.dial = parent
+	return c.Dial
+}
+
+// NewCache creates a DNS [Cache] configured with the given options.
+//
+// The returned cache can be wired into a [net.Resolver] through its
+// [Cache.Dial] method, while [Cache.Len] can be used to inspect it at runtime.
+func NewCache(options ...CacheOption) *Cache {
+	c := &Cache{negative: true}
 	for _, o := range options {
-		o.apply(&cache)
+		o.apply(c)
 	}
-	if cache.maxEntries == 0 {
-		cache.maxEntries = DefaultMaxCacheEntries
+	if c.maxEntries == 0 {
+		c.maxEntries = DefaultMaxCacheEntries
 	}
-	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		return &dnsConn{roundTrip: cachingRoundTrip(&cache, network, address)}, nil
-	}
+	return c
 }
 
 const DefaultMaxCacheEntries = 150
 
 // A CacheOption customizes the resolver cache.
 type CacheOption interface {
-	apply(*cache)
+	apply(*Cache)
 }
 
 type maxEntriesOption int
@@ -47,10 +55,10 @@ type maxTTLOption time.Duration
 type minTTLOption time.Duration
 type negativeCacheOption bool
 
-func (o maxEntriesOption) apply(c *cache)    { c.maxEntries = int(o) }
-func (o maxTTLOption) apply(c *cache)        { c.maxTTL = time.Duration(o) }
-func (o minTTLOption) apply(c *cache)        { c.minTTL = time.Duration(o) }
-func (o negativeCacheOption) apply(c *cache) { c.negative = bool(o) }
+func (o maxEntriesOption) apply(c *Cache)    { c.maxEntries = int(o) }
+func (o maxTTLOption) apply(c *Cache)        { c.maxTTL = time.Duration(o) }
+func (o minTTLOption) apply(c *Cache)        { c.minTTL = time.Duration(o) }
+func (o negativeCacheOption) apply(c *Cache) { c.negative = bool(o) }
 
 // MaxCacheEntries sets the maximum number of entries to cache.
 // If zero, [DefaultMaxCacheEntries] is used; negative means no limit.
@@ -65,7 +73,9 @@ func MinCacheTTL(d time.Duration) CacheOption { return minTTLOption(d) }
 // NegativeCache sets whether to cache negative responses.
 func NegativeCache(b bool) CacheOption { return negativeCacheOption(b) }
 
-type cache struct {
+// A Cache is a DNS cache that can be shared between resolvers.
+// It is safe for concurrent use.
+type Cache struct {
 	dial    DialFunc
 	entries map[string]cacheEntry // +checklocks:RWMutex
 
@@ -82,7 +92,27 @@ type cacheEntry struct {
 	value    string
 }
 
-func (c *cache) put(req string, res string) {
+// Dial is a [net.Resolver.Dial] function backed by the cache.
+func (c *Cache) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	return &dnsConn{roundTrip: cachingRoundTrip(c, network, address)}, nil
+}
+
+// Len returns the number of unexpired entries currently held in the cache.
+func (c *Cache) Len() int {
+	c.RLock()
+	defer c.RUnlock()
+
+	now := time.Now()
+	var n int
+	for _, e := range c.entries {
+		if e.deadline.After(now) {
+			n++
+		}
+	}
+	return n
+}
+
+func (c *Cache) put(req string, res string) {
 	// ignore uncacheable/unparseable answers
 	if invalid(req, res) {
 		return
@@ -140,7 +170,7 @@ func (c *cache) put(req string, res string) {
 	}
 }
 
-func (c *cache) get(req string) (res string) {
+func (c *Cache) get(req string) (res string) {
 	// ignore invalid messages
 	if len(req) < 12 {
 		return ""
@@ -260,7 +290,7 @@ func getUint32(s string) int {
 	return int(s[3]) | int(s[2])<<8 | int(s[1])<<16 | int(s[0])<<24
 }
 
-func cachingRoundTrip(cache *cache, network, address string) roundTripper {
+func cachingRoundTrip(cache *Cache, network, address string) roundTripper {
 	return func(ctx context.Context, req string) (res string, err error) {
 		// check cache
 		if res := cache.get(req); res != "" {
