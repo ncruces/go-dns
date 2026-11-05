@@ -121,8 +121,8 @@ func TestDoHCloseActiveRequest(t *testing.T) {
 			}
 			select {
 			case err := <-done:
-				if err == nil {
-					t.Error("closed request unexpectedly succeeded")
+				if !errors.Is(err, net.ErrClosed) {
+					t.Errorf("Read interrupted by Close = %v, want net.ErrClosed", err)
 				}
 			case <-time.After(time.Second):
 				t.Error("Close did not unblock Read")
