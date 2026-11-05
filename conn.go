@@ -11,8 +11,9 @@ import (
 )
 
 type dnsConn struct {
-	cancel    context.CancelFunc // +checklocks:Mutex
-	deadline  time.Time          // +checklocks:Mutex
+	ctx       context.Context
+	cancel    context.CancelFunc
+	deadline  time.Time // +checklocks:Mutex
 	roundTrip roundTripper
 
 	ibuf bytes.Buffer // +checklocks:Mutex
@@ -22,6 +23,11 @@ type dnsConn struct {
 }
 
 type roundTripper func(ctx context.Context, req string) (res string, err error)
+
+func newDNSConn(roundTrip roundTripper) *dnsConn {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &dnsConn{ctx: ctx, cancel: cancel, roundTrip: roundTrip}
+}
 
 func (c *dnsConn) Read(b []byte) (n int, err error) {
 	imsg, n, err := c.drainBuffers(b)
@@ -42,17 +48,14 @@ func (c *dnsConn) Read(b []byte) (n int, err error) {
 func (c *dnsConn) Write(b []byte) (n int, err error) {
 	c.Lock()
 	defer c.Unlock()
+	if c.ctx.Err() != nil {
+		return 0, net.ErrClosed
+	}
 	return c.ibuf.Write(b)
 }
 
 func (c *dnsConn) Close() error {
-	c.Lock()
-	cancel := c.cancel
-	c.Unlock()
-
-	if cancel != nil {
-		cancel()
-	}
+	c.cancel()
 	return nil
 }
 
@@ -85,6 +88,10 @@ func (c *dnsConn) SetWriteDeadline(t time.Time) error {
 func (c *dnsConn) drainBuffers(b []byte) (string, int, error) {
 	c.Lock()
 	defer c.Unlock()
+
+	if c.ctx.Err() != nil {
+		return "", 0, net.ErrClosed
+	}
 
 	// drain the output buffer
 	if c.obuf.Len() > 0 {
@@ -124,7 +131,7 @@ func (c *dnsConn) fillBuffer(b []byte, str string) (int, error) {
 func (c *dnsConn) childContext() (context.Context, context.CancelFunc) {
 	c.Lock()
 	defer c.Unlock()
-	ctx := context.Background()
+	ctx := c.ctx
 	if c.deadline.IsZero() {
 		return ctx, func() {}
 	}

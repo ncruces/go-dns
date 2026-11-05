@@ -74,7 +74,7 @@ func NewDoHResolver(uri string, options ...DoHOption) (*net.Resolver, error) {
 	var resolver = net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return &dnsConn{roundTrip: dohRoundTrip(uri, &client)}, nil
+			return newDNSConn(dohRoundTrip(uri, &client)), nil
 		},
 	}
 

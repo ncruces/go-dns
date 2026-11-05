@@ -31,7 +31,7 @@ func NewCachingDialer(parent DialFunc, options ...CacheOption) DialFunc {
 		cache.maxEntries = DefaultMaxCacheEntries
 	}
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		return &dnsConn{roundTrip: cachingRoundTrip(&cache, network, address)}, nil
+		return newDNSConn(cachingRoundTrip(&cache, network, address)), nil
 	}
 }
 
