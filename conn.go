@@ -39,6 +39,9 @@ func (c *dnsConn) Read(b []byte) (n int, err error) {
 	omsg, err := c.roundTrip(ctx, imsg)
 	cancel()
 	if err != nil {
+		if c.ctx.Err() != nil {
+			return 0, net.ErrClosed
+		}
 		return 0, err
 	}
 
@@ -88,7 +91,6 @@ func (c *dnsConn) SetWriteDeadline(t time.Time) error {
 func (c *dnsConn) drainBuffers(b []byte) (string, int, error) {
 	c.Lock()
 	defer c.Unlock()
-
 	if c.ctx.Err() != nil {
 		return "", 0, net.ErrClosed
 	}
@@ -121,6 +123,9 @@ func (c *dnsConn) drainBuffers(b []byte) (string, int, error) {
 func (c *dnsConn) fillBuffer(b []byte, str string) (int, error) {
 	c.Lock()
 	defer c.Unlock()
+	if c.ctx.Err() != nil {
+		return 0, net.ErrClosed
+	}
 	c.obuf.Grow(len(str) + 2)
 	c.obuf.WriteByte(byte(len(str) >> 8))
 	c.obuf.WriteByte(byte(len(str)))
