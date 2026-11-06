@@ -2,6 +2,7 @@ package dns
 
 import (
 	"context"
+	"encoding/binary"
 	"math"
 	"net"
 	"sync"
@@ -78,8 +79,10 @@ type cache struct {
 }
 
 type cacheEntry struct {
+	created  time.Time
 	deadline time.Time
 	value    string
+	ttls     []int
 }
 
 func (c *cache) put(req string, res string) {
@@ -94,7 +97,7 @@ func (c *cache) put(req string, res string) {
 	}
 
 	// ignore uncacheable/unparseable answers
-	ttl := getTTL(res)
+	ttl, ttls := getTTL(res)
 	if ttl <= 0 {
 		return
 	}
@@ -134,9 +137,12 @@ func (c *cache) put(req string, res string) {
 	}
 
 	// remove message IDs
+	now := time.Now()
 	c.entries[req[2:]] = cacheEntry{
-		deadline: time.Now().Add(ttl),
+		created:  now,
+		deadline: now.Add(ttl),
 		value:    res[2:],
+		ttls:     ttls,
 	}
 }
 
@@ -159,8 +165,19 @@ func (c *cache) get(req string) (res string) {
 	// remove message ID
 	entry, ok := c.entries[req[2:]]
 	if ok && time.Until(entry.deadline) > 0 {
-		// prepend correct ID
-		return req[:2] + entry.value
+		// Prepend the correct ID and age each resource record independently.
+		res := []byte(req[:2] + entry.value)
+		age := time.Since(entry.created) / time.Second
+		for _, offset := range entry.ttls {
+			ttl := binary.BigEndian.Uint32(res[offset:])
+			if age >= time.Duration(ttl) {
+				ttl = 0
+			} else {
+				ttl -= uint32(age)
+			}
+			binary.BigEndian.PutUint32(res[offset:], ttl)
+		}
+		return string(res)
 	}
 	return ""
 }
@@ -188,8 +205,10 @@ func nameError(res string) bool {
 	return res[3]&0xf == 3
 }
 
-func getTTL(msg string) time.Duration {
+func getTTL(msg string) (time.Duration, []int) {
 	ttl := math.MaxInt32
+	var offsets []int
+	size := len(msg)
 
 	qdcount := getUint16(msg[4:])
 	ancount := getUint16(msg[6:])
@@ -203,7 +222,7 @@ func getTTL(msg string) time.Duration {
 	for range qdcount {
 		name := getNameLen(msg)
 		if name < 0 || name+4 > len(msg) {
-			return -1
+			return -1, nil
 		}
 		msg = msg[name+4:]
 	}
@@ -212,22 +231,25 @@ func getTTL(msg string) time.Duration {
 	for range rdcount {
 		name := getNameLen(msg)
 		if name < 0 || name+10 > len(msg) {
-			return -1
+			return -1, nil
 		}
 		rtyp := getUint16(msg[name+0:])
 		rttl := getUint32(msg[name+4:])
 		rlen := getUint16(msg[name+8:])
 		if name+10+rlen > len(msg) {
-			return -1
+			return -1, nil
 		}
 		// skip EDNS OPT since it doesn't have a TTL
-		if rtyp != 41 && rttl < ttl {
-			ttl = rttl
+		if rtyp != 41 {
+			offsets = append(offsets, size-len(msg)+name+4)
+			if rttl < ttl {
+				ttl = rttl
+			}
 		}
 		msg = msg[name+10+rlen:]
 	}
 
-	return time.Duration(ttl) * time.Second
+	return time.Duration(ttl) * time.Second, offsets
 }
 
 func getNameLen(msg string) int {
